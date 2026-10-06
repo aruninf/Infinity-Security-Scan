@@ -1,9 +1,8 @@
-"""Local web GUI for nuclei (Enhanced FastAPI backend with process control & job history).
+"""Infinity Security Platform — Enterprise Web Application & API Security Scanner Backend.
 
 Run:
     pip install -r requirements.txt
     python app.py            # -> http://127.0.0.1:9057
-    # optional: NUCLEI_BIN=/path/to/nuclei python app.py
 """
 
 from __future__ import annotations
@@ -36,8 +35,8 @@ jobs: dict[str, dict] = {}
 lock = threading.Lock()
 
 
-def find_nuclei() -> str | None:
-    env = os.environ.get("NUCLEI_BIN")
+def find_engine_bin() -> str | None:
+    env = os.environ.get("NUCLEI_BIN") or os.environ.get("INFINITY_ENGINE_BIN")
     if env and Path(env).exists():
         return env
     for cand in (REPO_ROOT / "bin" / "nuclei", REPO_ROOT / "bin" / "nuclei.exe"):
@@ -128,7 +127,7 @@ def fetch_spec_url(url: str) -> tuple[bytes, str]:
 
     req = urllib.request.Request(
         url,
-        headers={"Accept": "application/json, */*", "User-Agent": "nuclei-gui/2.0"},
+        headers={"Accept": "application/json, */*", "User-Agent": "Infinity-Security-Platform/1.0"},
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         content = resp.read(10 * 1024 * 1024)
@@ -143,6 +142,7 @@ def run_scan(job_id: str, cmd: list[str]) -> None:
     log_path = job["dir"] / "run.log"
     try:
         with open(log_path, "w") as log:
+            log.write(f"[Infinity Security Suite] Initializing Assessment Job {job_id}...\n")
             log.write(f"$ {' '.join(shlex.quote(c) for c in cmd)}\n\n")
             log.flush()
             proc = subprocess.Popen(
@@ -164,7 +164,7 @@ def run_scan(job_id: str, cmd: list[str]) -> None:
             job["finished"] = time.time()
     except Exception as e:
         with open(log_path, "a") as log:
-            log.write(f"\n[gui error] {e}\n")
+            log.write(f"\n[Infinity Error] {e}\n")
         job["status"] = "failed"
         job["error"] = str(e)
         job["finished"] = time.time()
@@ -174,10 +174,11 @@ def get_job_summary(job_id: str) -> dict:
     job = jobs.get(job_id)
     job_dir = JOBS_DIR / job_id
     if not job_dir.exists():
-        raise HTTPException(404, "job directory not found")
+        raise HTTPException(404, "Job record not found")
 
     if job:
         status = job["status"]
+        scan_type = job.get("scan_type", "api")
         effective_mode = job.get("effective_mode", "unknown")
         filename = job.get("filename", "")
         started = job.get("started", job_dir.stat().st_mtime)
@@ -186,12 +187,12 @@ def get_job_summary(job_id: str) -> dict:
         error = job.get("error")
         spec_fixes = job.get("spec_fixes", 0)
     else:
-        # Reconstruct from disk
         started = job_dir.stat().st_mtime
         finished = None
         log_path = job_dir / "run.log"
         results_path = job_dir / "results.json"
         status = "unknown"
+        scan_type = "custom"
         effective_mode = "unknown"
         filename = ""
         returncode = None
@@ -200,7 +201,11 @@ def get_job_summary(job_id: str) -> dict:
 
         if log_path.exists():
             log_text = log_path.read_text(encoding="utf-8", errors="ignore")
-            first_line = log_text.splitlines()[0] if log_text.splitlines() else ""
+            first_line = ""
+            for line in log_text.splitlines()[:5]:
+                if line.startswith("$"):
+                    first_line = line
+                    break
             m = re.search(r"-im\s+([a-zA-Z0-9]+)", first_line)
             if m:
                 effective_mode = m.group(1)
@@ -211,9 +216,9 @@ def get_job_summary(job_id: str) -> dict:
 
         inp_path = job_dir / "input.used"
         if inp_path.exists():
-            first_inp = inp_path.read_text(encoding="utf-8", errors="ignore").strip().splitlines()
-            if first_inp:
-                filename = first_inp[0][:80]
+            lines = inp_path.read_text(encoding="utf-8", errors="ignore").strip().splitlines()
+            if lines:
+                filename = lines[0][:80]
 
     findings = parse_results_file(job_dir / "results.json")
     sev_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
@@ -227,6 +232,7 @@ def get_job_summary(job_id: str) -> dict:
     return {
         "id": job_id,
         "status": status,
+        "scan_type": scan_type,
         "effective_mode": effective_mode,
         "filename": filename,
         "started": started,
@@ -240,7 +246,7 @@ def get_job_summary(job_id: str) -> dict:
     }
 
 
-app = FastAPI(title="nuclei Modern GUI")
+app = FastAPI(title="Infinity Security Platform")
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
 
@@ -249,24 +255,25 @@ def index():
     return (Path(__file__).parent / "static" / "index.html").read_text()
 
 
+@app.get("/api/engine-status")
 @app.get("/api/nuclei-status")
-def nuclei_status():
-    bin_path = find_nuclei()
+def engine_status():
+    bin_path = find_engine_bin()
     if not bin_path:
-        return {"ok": False, "hint": "nuclei binary not found — run `make build` in the repo root first."}
+        return {"ok": False, "hint": "Infinity scan engine binary not found. Build or install engine first."}
     try:
         r = subprocess.run([bin_path, "-version"], capture_output=True, text=True, timeout=10)
         out = (r.stdout or r.stderr).strip()
         version = "v3"
         for line in out.splitlines():
             line_str = line.strip()
-            if "Nuclei Engine Version:" in line_str:
+            if "Nuclei Engine Version:" in line_str or "Engine Version:" in line_str:
                 version = line_str.split(":", 1)[1].strip()
                 break
             if line_str.startswith("v3.") or line_str.startswith("v2."):
                 version = line_str
                 break
-        return {"ok": True, "binary": bin_path, "version": version, "full": out}
+        return {"ok": True, "engine": "Infinity Core Engine", "version": version, "status": "Operational", "binary": bin_path}
     except Exception as e:
         return {"ok": False, "binary": bin_path, "hint": str(e)}
 
@@ -289,6 +296,7 @@ def list_jobs():
 async def start_scan(
     input_file: UploadFile | None = File(default=None),
     pasted_targets: str = Form(default=""),
+    scan_profile: str = Form(default="api"),
     input_mode: str = Form(default="auto"),
     dast: bool = Form(default=True),
     skip_format_validation: bool = Form(default=True),
@@ -303,11 +311,11 @@ async def start_scan(
     if input_mode not in INPUT_MODES:
         raise HTTPException(400, f"input_mode must be one of {INPUT_MODES}")
     if input_file is None and not pasted_targets.strip():
-        raise HTTPException(400, "Please upload a file or enter target URLs / spec endpoints")
+        raise HTTPException(400, "Please provide target Web Application URLs or upload an API specification file.")
 
-    bin_path = find_nuclei()
+    bin_path = find_engine_bin()
     if not bin_path:
-        raise HTTPException(500, "nuclei binary not found — run `make build` in the repo root first.")
+        raise HTTPException(500, "Security engine binary not found. Please verify engine installation.")
 
     job_id = uuid.uuid4().hex[:10]
     job_dir = JOBS_DIR / job_id
@@ -319,58 +327,83 @@ async def start_scan(
     pasted = pasted_targets.strip()
 
     fetched_from_url: str | None = None
-    if not raw and pasted and len(pasted.splitlines()) == 1 and pasted.lower().startswith(("http://", "https://")):
-        try:
-            raw, filename = fetch_spec_url(pasted)
-            fetched_from_url = pasted
-            pasted = ""
-        except Exception:
-            pass
 
-    mode = input_mode
-    if mode == "auto":
-        if pasted and not raw:
-            mode = "list"
-        else:
-            mode = detect_mode(filename, raw)
-
-    sanitized = 0
-    if pasted and not raw:
-        (job_dir / "input.used").write_text(pasted + "\n")
+    # Handle Web App vs API profile targets
+    if scan_profile == "web_app":
+        # Target URLs are full web apps (e.g. https://example.com, http://host:8080)
+        mode = "list"
         effective_mode = "list"
-    elif mode == "postman":
-        try:
-            collection = json.loads(raw.decode("utf-8"))
-        except Exception:
-            raise HTTPException(400, "Postman file is not valid JSON")
-        spec = postman_convert(collection)
-        if not spec.get("paths"):
-            raise HTTPException(400, "No convertible requests found in Postman collection")
-        (job_dir / "input.used").write_text(json.dumps(spec, indent=2))
-        effective_mode = "openapi"
-    elif mode in ("openapi", "swagger"):
-        try:
-            spec = json.loads(raw.decode("utf-8"))
-            base = None
-            if fetched_from_url:
-                from urllib.parse import urlparse
-                p = urlparse(fetched_from_url)
-                base = f"{p.scheme}://{p.hostname}" + (f":{p.port}" if p.port else "")
-            sanitized = sanitize_spec(spec, default_server=base)
-            if not spec.get("servers"):
-                raise HTTPException(
-                    400,
-                    "OpenAPI spec defines no `servers` — provide target server or include `servers` in the specification",
-                )
-            (job_dir / "input.used").write_text(json.dumps(spec))
-        except HTTPException:
-            raise
-        except Exception:
-            (job_dir / "input.used").write_bytes(raw)
-        effective_mode = mode
-    else:
-        (job_dir / "input.used").write_bytes(raw)
-        effective_mode = mode
+        (job_dir / "input.used").write_text(pasted + "\n" if pasted else raw.decode("utf-8", "ignore") + "\n")
+        # Apply comprehensive Web Application Audit tags if not customized
+        if not tags.strip():
+            tags = "owasp,cve,misconfig,exposure,panel,vuln,xss,sqli,rce,ssrf,cors"
+    elif scan_profile == "full_audit":
+        mode = input_mode
+        if not tags.strip():
+            tags = "cve,misconfig,exposure,panel,vuln,owasp,xss,sqli,rce,ssrf,cors,tech,ssl"
+    elif scan_profile == "recon":
+        mode = "list"
+        effective_mode = "list"
+        (job_dir / "input.used").write_text(pasted + "\n" if pasted else raw.decode("utf-8", "ignore") + "\n")
+        if not tags.strip():
+            tags = "exposure,panel,tech,misconfig,ssl"
+
+    # If API scan or auto-detection
+    if scan_profile in ("api", "full_audit", "custom"):
+        if not raw and pasted and len(pasted.splitlines()) == 1 and pasted.lower().startswith(("http://", "https://")):
+            # Auto-fetch if it looks like a spec or docs URL
+            if any(marker in pasted.lower() for marker in ("/api/docs", "swagger", "openapi", ".json", ".yaml", "spec")):
+                try:
+                    raw, filename = fetch_spec_url(pasted)
+                    fetched_from_url = pasted
+                    pasted = ""
+                except Exception:
+                    pass
+
+        mode = input_mode
+        if mode == "auto":
+            if pasted and not raw:
+                mode = "list"
+            else:
+                mode = detect_mode(filename, raw)
+
+        sanitized = 0
+        if pasted and not raw:
+            (job_dir / "input.used").write_text(pasted + "\n")
+            effective_mode = "list"
+        elif mode == "postman":
+            try:
+                collection = json.loads(raw.decode("utf-8"))
+            except Exception:
+                raise HTTPException(400, "Postman collection file is not valid JSON")
+            spec = postman_convert(collection)
+            if not spec.get("paths"):
+                raise HTTPException(400, "No convertible requests found in Postman collection")
+            (job_dir / "input.used").write_text(json.dumps(spec, indent=2))
+            effective_mode = "openapi"
+        elif mode in ("openapi", "swagger"):
+            try:
+                spec = json.loads(raw.decode("utf-8"))
+                base = None
+                if fetched_from_url:
+                    from urllib.parse import urlparse
+                    p = urlparse(fetched_from_url)
+                    base = f"{p.scheme}://{p.hostname}" + (f":{p.port}" if p.port else "")
+                sanitized = sanitize_spec(spec, default_server=base)
+                if not spec.get("servers"):
+                    raise HTTPException(
+                        400,
+                        "API specification defines no target server URL (`servers`). Please provide a base URL or configure servers in the spec.",
+                    )
+                (job_dir / "input.used").write_text(json.dumps(spec))
+            except HTTPException:
+                raise
+            except Exception:
+                (job_dir / "input.used").write_bytes(raw)
+            effective_mode = mode
+        else:
+            (job_dir / "input.used").write_bytes(raw if raw else (pasted + "\n").encode())
+            effective_mode = mode
 
     cmd = [
         bin_path,
@@ -391,7 +424,7 @@ async def start_scan(
         str(job_dir / "md"),
     ]
 
-    # Always use skip-format-validation for openapi/swagger unless explicitly turned off
+    # Automatic safety guardrail for format validation
     if skip_format_validation or effective_mode in ("openapi", "swagger"):
         cmd.append("-sfv")
 
@@ -424,7 +457,7 @@ async def start_scan(
             continue
         key = line.split("=", 1)[0].strip()
         if not key or not all(c.isalnum() or c in "_.-" for c in key):
-            raise HTTPException(400, f"Invalid variable line: {line[:60]}")
+            raise HTTPException(400, f"Invalid variable definition: {line[:60]}")
         cmd += ["-V", line]
 
     with lock:
@@ -436,6 +469,7 @@ async def start_scan(
             "started": time.time(),
             "finished": None,
             "proc": None,
+            "scan_type": scan_profile,
             "requested_mode": input_mode,
             "effective_mode": effective_mode,
             "filename": filename or (pasted.splitlines()[0][:60] if pasted else ""),
@@ -448,6 +482,7 @@ async def start_scan(
     threading.Thread(target=run_scan, args=(job_id, cmd), daemon=True).start()
     return {
         "job_id": job_id,
+        "scan_profile": scan_profile,
         "effective_mode": effective_mode,
         "fetched_from_url": fetched_from_url,
         "spec_fixes": jobs[job_id]["spec_fixes"],
@@ -463,7 +498,7 @@ def job_status(job_id: str):
 def stop_job(job_id: str):
     job = jobs.get(job_id)
     if not job:
-        raise HTTPException(404, "unknown job")
+        raise HTTPException(404, "Assessment job not found")
     proc = job.get("proc")
     if proc and proc.poll() is None:
         try:
@@ -473,10 +508,10 @@ def stop_job(job_id: str):
                 proc.kill()
             job["status"] = "stopped"
             job["finished"] = time.time()
-            return {"ok": True, "message": "Scan process stopped"}
+            return {"ok": True, "message": "Assessment audit aborted"}
         except Exception as e:
-            raise HTTPException(500, f"Failed to stop process: {e}")
-    return {"ok": True, "message": "Job is not running"}
+            raise HTTPException(500, f"Failed to stop assessment: {e}")
+    return {"ok": True, "message": "Assessment already concluded"}
 
 
 @app.delete("/api/jobs/{job_id}")
@@ -539,19 +574,19 @@ def job_results(job_id: str):
 def job_download(job_id: str, file: str):
     job_dir = JOBS_DIR / job_id
     if not job_dir.exists():
-        raise HTTPException(404, "job not found")
+        raise HTTPException(404, "Assessment record not found")
 
     if file.startswith("md/"):
         target = job_dir / file
         if not str(target.resolve()).startswith(str(job_dir.resolve())):
-            raise HTTPException(400, "invalid path")
+            raise HTTPException(400, "Invalid artifact path")
     elif file in DOWNLOADABLE:
         target = job_dir / file
     else:
-        raise HTTPException(400, f"downloadable files: {sorted(DOWNLOADABLE)} + md/<file>")
+        raise HTTPException(400, f"Available artifacts: {sorted(DOWNLOADABLE)} + md/<file>")
 
     if not target.exists():
-        raise HTTPException(404, "file not generated yet")
+        raise HTTPException(404, "Artifact not yet generated")
     return FileResponse(target, filename=target.name)
 
 
@@ -559,7 +594,7 @@ def job_download(job_id: str, file: str):
 def job_files(job_id: str):
     job_dir = JOBS_DIR / job_id
     if not job_dir.exists():
-        raise HTTPException(404, "job not found")
+        raise HTTPException(404, "Assessment record not found")
 
     files = [p.name for p in job_dir.iterdir() if p.is_file() and p.name != "input.used"]
     md_dir = job_dir / "md"
