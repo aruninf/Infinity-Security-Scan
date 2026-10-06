@@ -1583,7 +1583,7 @@
         tbody.innerHTML = res.map(j => {
           const dateStr = j.started ? new Date(j.started * 1000).toLocaleString() : '-';
           return `
-            <tr>
+            <tr onclick="loadJobToView('${j.id}')">
               <td><strong style="color:#fff; font-family:'JetBrains Mono'">${j.id}</strong></td>
               <td><span class="badge badge-${j.status === 'done' ? 'info' : (j.status === 'failed' ? 'critical' : 'medium')}">${j.status}</span></td>
               <td><span style="font-size:0.8rem; color:var(--text-muted); text-transform:uppercase">${j.scan_type || j.effective_mode}</span></td>
@@ -1591,8 +1591,8 @@
               <td><strong>${j.findings_count || 0}</strong></td>
               <td><span style="font-size:0.8rem; color:var(--text-dim)">${dateStr}</span></td>
               <td style="text-align:right">
-                <button class="btn btn-sm" onclick="loadJobToView('${j.id}')">View</button>
-                <button class="btn btn-danger btn-sm" onclick="deleteJob('${j.id}')" style="margin-left:0.3rem">✕</button>
+                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); loadJobToView('${j.id}')">🔍 View</button>
+                <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteJob('${j.id}')" style="margin-left:0.3rem">✕</button>
               </td>
             </tr>
           `;
