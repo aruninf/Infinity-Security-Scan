@@ -1398,9 +1398,19 @@
       document.getElementById('findingsShowingText').textContent = `Showing ${filtered.length} of ${currentResults.length} vulnerabilities`;
 
       if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-dim); padding:2rem">
-          ${currentResults.length ? 'No vulnerabilities match filter.' : '0 vulnerabilities identified.'}
-        </td></tr>`;
+        if (!currentResults.length) {
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:3rem 1.5rem">
+            <div style="font-size:2.4rem; margin-bottom:0.6rem">🛡️ ✨</div>
+            <div style="font-size:1.15rem; font-weight:800; color:var(--success); margin-bottom:0.35rem">Clean Assessment Verdict — Zero Vulnerabilities Detected</div>
+            <div style="font-size:0.84rem; color:var(--text-muted); max-width:560px; margin:0 auto; line-height:1.5">
+              All evaluated target endpoints and parameters were tested against dynamic injection payloads and misconfigurations with 0 vulnerabilities detected. Download your executive report below.
+            </div>
+          </td></tr>`;
+        } else {
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-dim); padding:2rem">
+            No vulnerabilities match active severity/search filter.
+          </td></tr>`;
+        }
         return;
       }
 

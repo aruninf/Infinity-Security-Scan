@@ -182,10 +182,6 @@ func (exporter *Exporter) Close() error {
 	exporter.mutex.Lock()
 	defer exporter.mutex.Unlock()
 
-	if len(exporter.rules) == 0 {
-		// no output if there are no results
-		return nil
-	}
 	// links results and rules/templates
 	exporter.addToolDetails()
 

@@ -73,7 +73,6 @@ func (e *Exporter) Export(event *output.ResultEvent) error {
 }
 
 // Close generates the PDF report and writes it to disk.
-// Returns nil without creating a file when there are no results.
 func (e *Exporter) Close() error {
 	e.mu.Lock()
 	snapshot := make([]output.ResultEvent, len(e.results))
@@ -81,9 +80,6 @@ func (e *Exporter) Close() error {
 	opts := *e.options
 	e.mu.Unlock()
 
-	if len(snapshot) == 0 {
-		return nil
-	}
 	if dir := filepath.Dir(opts.File); dir != "." && dir != "" {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return errors.Wrap(err, "could not create directory for PDF report")
@@ -109,11 +105,11 @@ func renderHeader(doc *fpdf.Fpdf) {
 	doc.AddPage()
 	doc.SetFont("Helvetica", "B", 18)
 	doc.SetTextColor(30, 30, 30)
-	doc.CellFormat(0, 10, "Nuclei Vulnerability Scan Report", "", 1, "C", false, 0, "")
+	doc.CellFormat(0, 10, "Infinity Security Assessment Report", "", 1, "C", false, 0, "")
 	doc.SetFont("Helvetica", "", 9)
 	doc.SetTextColor(100, 100, 100)
 	doc.CellFormat(0, 5, "Generated: "+time.Now().UTC().Format("2006-01-02 15:04:05 UTC"), "", 1, "C", false, 0, "")
-	doc.CellFormat(0, 5, "Engine: Nuclei "+config.Version, "", 1, "C", false, 0, "")
+	doc.CellFormat(0, 5, "Engine: Infinity AppSec Engine "+config.Version, "", 1, "C", false, 0, "")
 	doc.Ln(6)
 }
 
@@ -181,6 +177,12 @@ func renderFindings(doc *fpdf.Fpdf, results []output.ResultEvent) {
 	doc.SetTextColor(30, 30, 30)
 	doc.CellFormat(0, 7, "Findings", "", 1, "", false, 0, "")
 	doc.Ln(1)
+	if len(results) == 0 {
+		doc.SetFont("Helvetica", "", 10)
+		doc.SetTextColor(30, 140, 60)
+		doc.CellFormat(0, 8, "No vulnerabilities were identified during this assessment. All tested endpoints passed clean.", "", 1, "", false, 0, "")
+		return
+	}
 	for i, r := range results {
 		sev := strings.ToLower(r.Info.SeverityHolder.Severity.String())
 		cr, cg, cb := colorFor(sev)
