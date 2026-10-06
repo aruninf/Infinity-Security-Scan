@@ -27,10 +27,10 @@ func TestDirectoryInfoContainsKnownLabels(t *testing.T) {
 	cfg := config.DefaultConfig
 
 	require.Equal(t, strings.Join([]string{
-		fmt.Sprintf("Nuclei Config Directory: %s", cfg.GetConfigDir()),
-		fmt.Sprintf("Nuclei State Directory: %s", cfg.GetStateDir()),
-		fmt.Sprintf("Nuclei Cache Directory: %s", cfg.GetCacheDir()),
-		fmt.Sprintf("PDCP Directory: %s", pdcpauth.PDCPDir),
+		fmt.Sprintf("Infinity Config Directory: %s", cfg.GetConfigDir()),
+		fmt.Sprintf("Infinity State Directory: %s", cfg.GetStateDir()),
+		fmt.Sprintf("Infinity Cache Directory: %s", cfg.GetCacheDir()),
+		fmt.Sprintf("Infinity Session Directory: %s", pdcpauth.PDCPDir),
 		"",
 	}, "\n"), info)
 	require.Equal(t, 4, strings.Count(info, "\n"))
@@ -46,9 +46,9 @@ func TestLogDirectoryInfoContainsKnownLabels(t *testing.T) {
 	LogDirectoryInfo(logger)
 
 	require.Equal(t, []string{
-		fmt.Sprintf("[INF] Nuclei Config Directory: %s", config.DefaultConfig.GetConfigDir()),
-		fmt.Sprintf("[INF] Nuclei State Directory: %s", config.DefaultConfig.GetStateDir()),
-		fmt.Sprintf("[INF] Nuclei Cache Directory: %s", config.DefaultConfig.GetCacheDir()),
-		fmt.Sprintf("[INF] PDCP Directory: %s", pdcpauth.PDCPDir),
+		fmt.Sprintf("[INF] Infinity Config Directory: %s", config.DefaultConfig.GetConfigDir()),
+		fmt.Sprintf("[INF] Infinity State Directory: %s", config.DefaultConfig.GetStateDir()),
+		fmt.Sprintf("[INF] Infinity Cache Directory: %s", config.DefaultConfig.GetCacheDir()),
+		fmt.Sprintf("[INF] Infinity Session Directory: %s", pdcpauth.PDCPDir),
 	}, writer.records)
 }

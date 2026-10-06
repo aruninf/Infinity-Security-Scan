@@ -17,10 +17,10 @@ type directoryRecord struct {
 
 func directoryRecords() []directoryRecord {
 	return []directoryRecord{
-		{label: "Nuclei Config Directory", path: config.DefaultConfig.GetConfigDir()},
-		{label: "Nuclei State Directory", path: config.DefaultConfig.GetStateDir()},
-		{label: "Nuclei Cache Directory", path: config.DefaultConfig.GetCacheDir()},
-		{label: "PDCP Directory", path: pdcpauth.PDCPDir},
+		{label: "Infinity Config Directory", path: config.DefaultConfig.GetConfigDir()},
+		{label: "Infinity State Directory", path: config.DefaultConfig.GetStateDir()},
+		{label: "Infinity Cache Directory", path: config.DefaultConfig.GetCacheDir()},
+		{label: "Infinity Session Directory", path: pdcpauth.PDCPDir},
 	}
 }
 

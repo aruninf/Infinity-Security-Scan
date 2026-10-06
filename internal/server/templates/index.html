@@ -222,27 +222,27 @@
 
     <div class="report-header">
         <div class="ascii-header">
-                     __     _
-   ____  __  _______/ /__  (_)
-  / __ \/ / / / ___/ / _ \/ /
- / / / / /_/ / /__/ /  __/ /
-/_/ /_/\__,_/\___/_/\___/_/   {{.DASTServerInfo.NucleiVersion}}
+    ____   _   __  ______ ____   _   __ ____  ______ __  __
+   /  _/  / | / / / ____//  _/  / | / //  _/ /_  __// / / /
+   / /   /  |/ / / /_    / /   /  |/ / / /    / /  / /_/ / 
+ _/ /   / /|  / / __/  _/ /   / /|  / _/ /   / /   \__, /  
+/___/  /_/ |_/ /_/    /___/  /_/ |_/ /___/  /_/   /____/   {{.DASTServerInfo.NucleiVersion}}
 
-                projectdiscovery.io
+                infinity.security
 
-Dynamic Application Security Testing (DAST) API Server
+Infinity Application Security Testing (DAST) API Server
         </div>
         <div class="timestamp">[+] Server started at: <span id="datetime">{{.DASTScanStartTime}}</span></div>
     </div>
 
     <div class="section">
         <div class="section-header">[*] Server Configuration</div>
-        <div class="terminal-line"><span class="key">Nuclei Version</span><span class="value">{{.DASTServerInfo.NucleiVersion}}</span></div>
+        <div class="terminal-line"><span class="key">Infinity Version</span><span class="value">{{.DASTServerInfo.NucleiVersion}}</span></div>
         <div class="terminal-line"><span class="key">Template Version</span><span class="value">{{.DASTServerInfo.NucleiTemplateVersion}}</span></div>
-        <div class="terminal-line"><span class="key">DAST Server API</span><span class="value">{{.DASTServerInfo.NucleiDastServerAPI}}</span></div>
+        <div class="terminal-line"><span class="key">Infinity Server API</span><span class="value">{{.DASTServerInfo.NucleiDastServerAPI}}</span></div>
         <div class="terminal-line"><span class="key">Auth Status</span><span class="value">{{if .DASTServerInfo.ServerAuthEnabled}}ENABLED{{else}}DISABLED{{end}}</span></div>
         {{if .DASTServerInfo.NucleiDastProxyAddr}}
-        <div class="terminal-line"><span class="key">DAST Proxy</span><span class="value">{{.DASTServerInfo.NucleiDastProxyAddr}}</span></div>
+        <div class="terminal-line"><span class="key">Infinity Proxy</span><span class="value">{{.DASTServerInfo.NucleiDastProxyAddr}}</span></div>
         <div class="terminal-line"><span class="key">Proxy Auth Status</span><span class="value">{{if .DASTServerInfo.ProxyAuthEnabled}}ENABLED{{else}}DISABLED{{end}}</span></div>
         {{end}}
     </div>

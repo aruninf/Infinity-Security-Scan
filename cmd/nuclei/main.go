@@ -662,7 +662,7 @@ func cleanupOldResumeFiles() {
 
 // printVersion prints the nuclei version and exits.
 func printVersion() {
-	options.Logger.Info().Msgf("Nuclei Engine Version: %s", config.Version)
+	options.Logger.Info().Msgf("Infinity Engine Version: %s", config.Version)
 	runner.LogDirectoryInfo(options.Logger)
 	os.Exit(0)
 }
@@ -670,7 +670,7 @@ func printVersion() {
 // printTemplateVersion prints the nuclei template version and exits.
 func printTemplateVersion() {
 	cfg := config.DefaultConfig
-	options.Logger.Info().Msgf("Public nuclei-templates version: %s (%s)\n", cfg.TemplateVersion, cfg.TemplatesDirectory)
+	options.Logger.Info().Msgf("Public infinity-templates version: %s (%s)\n", cfg.TemplateVersion, cfg.TemplatesDirectory)
 
 	if fileutil.FolderExists(cfg.CustomS3TemplatesDirectory) {
 		options.Logger.Info().Msgf("Custom S3 templates location: %s\n", cfg.CustomS3TemplatesDirectory)
