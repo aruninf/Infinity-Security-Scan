@@ -11,17 +11,17 @@ import (
 )
 
 var banner = fmt.Sprintf(`
-                     __     _
-   ____  __  _______/ /__  (_)
-  / __ \/ / / / ___/ / _ \/ /
- / / / / /_/ / /__/ /  __/ /
-/_/ /_/\__,_/\___/_/\___/_/   %s
+    ____   _   __  _____  ____   _   __  ____    ______  __  __
+   /  _/  / | / / / ____//  _/  / | / / /  _/   /_  __/  \ \/ /
+   / /   /  |/ / / /_    / /   /  |/ /  / /      / /      \  / 
+ _/ /   / /|  / / __/  _/ /   / /|  / _/ /      / /       / /  
+/___/  /_/ |_/ /_/    /___/  /_/ |_/ /___/     /_/       /_/   %s
 `, config.Version)
 
 // showBanner is used to show the banner to the user
 func showBanner() {
 	gologger.Print().Msgf("%s\n", banner)
-	gologger.Print().Msgf("\t\tprojectdiscovery.io\n\n")
+	gologger.Print().Msgf("\t\tinfinity.security\n\n")
 }
 
 // NucleiToolUpdateCallback updates nuclei binary/tool to latest version

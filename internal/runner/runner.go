@@ -1058,13 +1058,11 @@ func (r *Runner) displayExecutionInfo(store *loader.Store) {
 	cfg := config.DefaultConfig
 
 	updateutils.Aurora = r.colorizer
-	gologger.Info().Msg(versionInfo(cfg, r.colorizer, config.Version, cfg.LatestNucleiVersion, "nuclei"))
+	gologger.Info().Msg(versionInfo(cfg, r.colorizer, config.Version, cfg.LatestNucleiVersion, "infinity-engine"))
 	gologger.Info().Msg(templateVersionInfo(cfg, r.colorizer))
 	if !HideAutoSaveMsg {
 		if r.pdcpUploadErrMsg != "" {
 			r.Logger.Warning().Msgf("%s", r.pdcpUploadErrMsg)
-		} else {
-			r.Logger.Info().Msgf("To view results on cloud dashboard, visit %v/scans upon scan completion.", pdcpauth.DashBoardURL)
 		}
 	}
 
@@ -1082,7 +1080,8 @@ func (r *Runner) displayExecutionInfo(store *loader.Store) {
 				if k == templates.Unsigned && !r.options.Silent && !config.DefaultConfig.HideTemplateSigWarning {
 					r.Logger.Warning().Msgf("Loading %d unsigned templates for scan. Use with caution.", value)
 				} else {
-					r.Logger.Info().Msgf("Executing %d signed templates from %s", value, k)
+					displayRepo := strings.ReplaceAll(k, "projectdiscovery/nuclei-templates", "infinity/security-templates")
+					r.Logger.Info().Msgf("Executing %d signed templates from %s", value, displayRepo)
 				}
 			}
 		}
@@ -1102,7 +1101,7 @@ func versionInfo(cfg *config.Config, colorizer *aurora.Aurora, version, latestVe
 }
 
 func templateVersionInfo(cfg *config.Config, colorizer *aurora.Aurora) string {
-	return versionInfo(cfg, colorizer, cfg.TemplateVersion, cfg.LatestNucleiTemplatesVersion, "nuclei-templates")
+	return versionInfo(cfg, colorizer, cfg.TemplateVersion, cfg.LatestNucleiTemplatesVersion, "infinity-templates")
 }
 
 // SaveResumeConfig to file
