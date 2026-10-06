@@ -958,6 +958,27 @@
         </div>
       </div>
 
+      <!-- Completion & Download Banner -->
+      <div class="card" id="completionCard" style="display:none; background:rgba(16, 185, 129, 0.08); border-color:rgba(16, 185, 129, 0.4); margin-bottom:1.25rem; padding:1.25rem">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem">
+          <div>
+            <div style="display:flex; align-items:center; gap:0.5rem">
+              <span style="font-size:1.4rem">🛡️</span>
+              <div style="font-size:1.05rem; font-weight:800; color:var(--success)" id="completionTitle">Assessment Complete — Reports Ready</div>
+            </div>
+            <div style="font-size:0.82rem; color:var(--text-muted); margin-top:0.3rem" id="completionSubtitle">
+              All endpoints evaluated. Download your executive report or inspect assessment findings below.
+            </div>
+          </div>
+          <div style="display:flex; gap:0.6rem; flex-wrap:wrap" id="quickDownloadBar">
+            <a class="btn btn-sm btn-primary" id="btnQuickPdf" target="_blank" href="#">📄 Download PDF Report</a>
+            <a class="btn btn-sm" id="btnQuickSarif" target="_blank" href="#">📊 Download SARIF</a>
+            <a class="btn btn-sm" id="btnQuickSummary" target="_blank" href="#">📝 Markdown Summary</a>
+            <button class="btn btn-sm" id="btnGoFindings" onclick="switchTab('findingsTab')">🔍 View Findings (0)</button>
+          </div>
+        </div>
+      </div>
+
       <div class="terminal-container">
         <div class="terminal-bar">
           <div class="terminal-status">
@@ -1339,7 +1360,21 @@
           document.getElementById('activePulse').style.display = 'none';
           document.getElementById('terminalStatusText').textContent = logRes.status.toUpperCase();
           document.getElementById('terminalDot').style.background = logRes.status === 'done' ? 'var(--info)' : 'var(--danger)';
-          showToast(`Assessment finished! Identified ${currentResults.length} vulnerabilities.`);
+
+          // Show and populate Quick Completion Banner
+          const card = document.getElementById('completionCard');
+          if (card) {
+            card.style.display = 'block';
+            document.getElementById('btnQuickPdf').href = `/api/jobs/${currentJobId}/download?file=report.pdf`;
+            document.getElementById('btnQuickSarif').href = `/api/jobs/${currentJobId}/download?file=report.sarif`;
+            document.getElementById('btnQuickSummary').href = `/api/jobs/${currentJobId}/download?file=md/summary.md`;
+            document.getElementById('btnGoFindings').textContent = `🔍 View Findings (${currentResults.length})`;
+            document.getElementById('completionSubtitle').textContent = currentResults.length 
+              ? `Identified ${currentResults.length} security vulnerabilities. Download your reports or inspect findings below.`
+              : `All evaluated target endpoints passed cleanly with 0 vulnerabilities detected. Executive & SARIF reports generated.`;
+          }
+
+          showToast(`Assessment ${logRes.status}! Identified ${currentResults.length} vulnerabilities.`);
         }
       } catch (e) {
         console.error("Polling error:", e);
@@ -1585,6 +1620,18 @@
         document.getElementById('terminalLog').textContent = logRes.log || '[Log not available]';
         document.getElementById('liveJobTitle').textContent = `Loaded Assessment ${jobId}`;
         document.getElementById('terminalStatusText').textContent = logRes.status ? logRes.status.toUpperCase() : "LOADED";
+
+        const card = document.getElementById('completionCard');
+        if (card) {
+          card.style.display = 'block';
+          document.getElementById('btnQuickPdf').href = `/api/jobs/${jobId}/download?file=report.pdf`;
+          document.getElementById('btnQuickSarif').href = `/api/jobs/${jobId}/download?file=report.sarif`;
+          document.getElementById('btnQuickSummary').href = `/api/jobs/${jobId}/download?file=md/summary.md`;
+          document.getElementById('btnGoFindings').textContent = `🔍 View Findings (${currentResults.length})`;
+          document.getElementById('completionSubtitle').textContent = currentResults.length 
+            ? `Identified ${currentResults.length} security vulnerabilities. Download your reports or inspect findings below.`
+            : `All evaluated target endpoints passed cleanly with 0 vulnerabilities detected. Executive & SARIF reports generated.`;
+        }
 
         showToast(`Loaded Assessment ${jobId}`);
       } catch (e) {
