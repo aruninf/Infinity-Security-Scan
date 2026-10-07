@@ -824,6 +824,12 @@
           </div>
         </div>
 
+        <!-- Path Scope (module-only scans, e.g. auth layer) -->
+        <div class="form-group" style="margin-top:0.5rem">
+          <label for="scopeInput">Limit To Paths Containing (optional — e.g. <code>/api/v1/auth</code> for auth-layer only):</label>
+          <input type="text" id="scopeInput" placeholder="/api/v1/auth  (blank = whole API)">
+        </div>
+
         <!-- Input Mode Selector -->
         <div class="form-group" style="margin-top:0.5rem" id="modeSelectorGroup">
           <label>Target Specification Format:</label>
@@ -850,7 +856,7 @@
             <div class="card-subtitle">Ensure complete endpoint coverage by bypassing missing parameter aborts or providing default variable values</div>
           </div>
           <button type="button" class="btn btn-sm" id="fillParamsBtn">
-            ⚡ Pre-fill Sample IDs (id=1, categoryId=1, parentId=1)
+            🔍 Detect Required Inputs From Spec
           </button>
         </div>
 
@@ -926,6 +932,14 @@
             <label for="headersInput">Authentication Tokens & Custom Request Headers:</label>
             <textarea id="headersInput" rows="2" placeholder="Authorization: Bearer eyJhbGciOi...&#10;Cookie: session=xyz123"></textarea>
           </div>
+          <div class="form-group">
+            <label>Auto-login (recommended for APIs): log in with a test account instead of pasting a token:</label>
+            <div style="display:flex; gap:0.6rem; flex-wrap:wrap">
+              <input type="text" id="authIdInput" placeholder="Login email / phone" style="flex:2; min-width:180px">
+              <input type="password" id="authPwInput" placeholder="Account password" style="flex:2; min-width:180px" autocomplete="off">
+            </div>
+            <div style="font-size:0.78rem; color:var(--text-muted); margin-top:0.3rem">Scanner calls your API's own sign-in endpoint once, uses the fresh Bearer token for all phases, never logs it. Registration can't be automated (email/SMS OTP-gated) — create the test account once first.</div>
+          </div>
         </div>
       </div>
 
@@ -967,7 +981,7 @@
               <div style="font-size:1.05rem; font-weight:800; color:var(--success)" id="completionTitle">Assessment Complete — Reports Ready</div>
             </div>
             <div style="font-size:0.82rem; color:var(--text-muted); margin-top:0.3rem" id="completionSubtitle">
-              All endpoints evaluated. Download your executive report or inspect assessment findings below.
+              All endpoints evaluated. View the in-browser executive report or inspect findings below — no downloads needed.
             </div>
           </div>
           <div style="display:flex; gap:0.6rem; flex-wrap:wrap" id="quickDownloadBar">
@@ -975,9 +989,6 @@
               👁️ View Executive Report
             </button>
             <button class="btn btn-sm" id="btnGoFindings" onclick="switchTab('findingsTab')">🔍 View Findings (0)</button>
-            <a class="btn btn-sm" id="btnQuickPdf" target="_blank" href="#">📄 Download PDF</a>
-            <a class="btn btn-sm" id="btnQuickSarif" target="_blank" href="#">📊 SARIF</a>
-            <a class="btn btn-sm" id="btnQuickSummary" target="_blank" href="#">📝 Markdown</a>
           </div>
         </div>
       </div>
@@ -1076,16 +1087,7 @@
         </table>
       </div>
 
-      <!-- Download Reports Area -->
-      <div class="card" style="margin-top:1.5rem">
-        <div class="card-title">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Executive & Engineering Assessment Reports
-        </div>
-        <div class="dl-grid" id="downloadsGrid">
-          <span style="color:var(--text-dim); font-size:0.85rem">Assessment artifacts will appear here upon completion.</span>
-        </div>
-      </div>
+      <!-- Reports are fully in-browser (executive modal + findings table). No downloads needed. -->
     </section>
 
     <!-- TAB 4: JOB HISTORY VIEW -->
@@ -1178,6 +1180,11 @@
       t.textContent = msg;
       t.classList.add('show');
       setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    // Escape scan-controlled data before injecting into HTML (payloads reflect!)
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
     // Engine Status
@@ -1285,12 +1292,34 @@
       });
     });
 
-    // Pre-fill parameters button
-    document.getElementById('fillParamsBtn').addEventListener('click', () => {
-      const current = document.getElementById('varsInput').value.trim();
-      const samples = "id=1\ncategoryId=1\nparentId=1";
-      document.getElementById('varsInput').value = current ? current + "\n" + samples : samples;
-      showToast("Pre-filled sample OpenAPI parameters");
+    // Detect required inputs button: ask the spec what it needs, pre-fill vars
+    document.getElementById('fillParamsBtn').addEventListener('click', async () => {
+      const file = fileInput.files[0];
+      const pasted = document.getElementById('pastedTargets').value.trim();
+      const fd = new FormData();
+      if (file) fd.append('input_file', file);
+      fd.append('pasted_spec', file ? '' : pasted);
+      fd.append('vars', document.getElementById('varsInput').value);
+      const btn = document.getElementById('fillParamsBtn');
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/spec-inputs', { method: 'POST', body: fd });
+        if (!r.ok) { showToast("Input detection failed: " + (await r.text()).slice(0, 160)); return; }
+        const data = await r.json();
+        const existing = new Set(document.getElementById('varsInput').value.split('\n').map(l => l.split('=')[0].trim()).filter(Boolean));
+        const add = (data.required_vars || []).filter(v => !existing.has(v.key)).map(v => v.key + "=");
+        if (add.length) {
+          const cur = document.getElementById('varsInput').value.trim();
+          document.getElementById('varsInput').value = cur ? cur + "\n" + add.join("\n") : add.join("\n");
+        }
+        const ask = (data.missing_no_default || []).filter(k => !existing.has(k));
+        const msgs = [];
+        msgs.push(`${data.counts.required_params} required params (${ask.length} need REAL values: ${ask.slice(0, 6).join(', ') || 'none'})`);
+        if (data.auth && data.auth.bearer && !document.getElementById('authIdInput').value.trim()) msgs.push("spec needs Bearer auth — fill auto-login, not a pasted token");
+        if ((data.otp_gated_signup || []).length) msgs.push("sign-up is OTP-gated — use a pre-verified account");
+        showToast("Required inputs: " + msgs.join(" | "));
+      } catch (e) { showToast("Input detection error: " + e); }
+      finally { btn.disabled = false; }
     });
 
     // Launch Scan
@@ -1317,6 +1346,9 @@
       fd.append('severity', document.getElementById('severityFilter').value);
       fd.append('headers', document.getElementById('headersInput').value);
       fd.append('vars', document.getElementById('varsInput').value);
+      fd.append('auth_identifier', document.getElementById('authIdInput').value);
+      fd.append('auth_password', document.getElementById('authPwInput').value);
+      fd.append('path_scope', document.getElementById('scopeInput').value);
 
       document.getElementById('launchScanBtn').disabled = true;
       document.getElementById('launchScanBtn').textContent = "Initializing Security Engine...";
@@ -1332,6 +1364,18 @@
         currentJobId = data.job_id;
         logOffset = 0;
         currentResults = [];
+        if (data.input_needs && (data.input_needs.missing_no_default || []).length) {
+          showToast(`⚠️ ${data.input_needs.missing_no_default.length} required IDs use synthetic values (${data.input_needs.missing_no_default.slice(0, 5).join(', ')}) — BOLA/IDOR weak. Stop, fill real values, re-run.`);
+        }
+        if (data.auth && data.auth.masked_token) {
+          const v = data.auth.verified === true ? 'verified ✓ token accepted'
+            : data.auth.verified === false ? 'UNVERIFIED — token rejected'
+            : 'login OK, no who-am-i endpoint to verify against';
+          showToast(`🔐 Auto-login OK via ${data.auth.login_path} (${data.auth.masked_token}) — ${v}. Scanning as your account.`);
+        }
+        if (data.scope && data.scope.pattern) {
+          showToast(`🎯 Scope '${data.scope.pattern}': ${data.scope.kept} paths/targets kept, ${data.scope.dropped} dropped.`);
+        }
 
         // UI Reset
         document.getElementById('terminalLog').textContent = `[Infinity Platform] Assessment ${currentJobId} started (Profile: ${data.scan_profile}, Mode: ${data.effective_mode})\n`;
@@ -1386,9 +1430,6 @@
         currentResults = resData.results || [];
         updateMetricsAndTable();
 
-        const filesData = await (await fetch(`/api/jobs/${currentJobId}/files`)).json();
-        updateDownloadsGrid(filesData.files || []);
-
         if (logRes.status === 'done' || logRes.status === 'failed' || logRes.status === 'stopped') {
           clearInterval(pollInterval);
           clearInterval(timerInterval);
@@ -1401,13 +1442,17 @@
           const card = document.getElementById('completionCard');
           if (card) {
             card.style.display = 'block';
-            document.getElementById('btnQuickPdf').href = `/api/jobs/${currentJobId}/download?file=report.pdf`;
-            document.getElementById('btnQuickSarif').href = `/api/jobs/${currentJobId}/download?file=report.sarif`;
-            document.getElementById('btnQuickSummary').href = `/api/jobs/${currentJobId}/download?file=md/summary.md`;
             document.getElementById('btnGoFindings').textContent = `🔍 View Findings (${currentResults.length})`;
-            document.getElementById('completionSubtitle').textContent = currentResults.length 
-              ? `Identified ${currentResults.length} security vulnerabilities. Download your reports or inspect findings below.`
-              : `All evaluated target endpoints passed cleanly with 0 vulnerabilities detected. Executive & SARIF reports generated.`;
+            try {
+              const rep = await (await fetch(`/api/jobs/${currentJobId}/report-data`)).json();
+              window._lastGrade = rep.score;
+              window._lastLabel = rep.score_label;
+            } catch (e) { /* grade stays unknown */ }
+            document.getElementById('completionSubtitle').textContent = currentResults.length
+              ? `Identified ${currentResults.length} security vulnerabilities. Open the executive report or inspect findings below.`
+              : ((window._lastGrade === 'I')
+                ? 'Inconclusive — coverage too thin. Provide real IDs + credentials and re-run.'
+                : 'Zero verified findings with observed coverage. Open the executive report for proof.');
           }
 
           showToast(`Assessment ${logRes.status}! Identified ${currentResults.length} vulnerabilities.`);
@@ -1470,19 +1515,18 @@
 
       if (filtered.length === 0) {
         if (!currentResults.length) {
+          const grade = window._lastGrade || '';
+          const inconclusive = grade === 'I';
           tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:3.5rem 1.5rem">
-            <div style="font-size:2.6rem; margin-bottom:0.75rem">🛡️ ✨</div>
-            <div style="font-size:1.25rem; font-weight:800; color:var(--success); margin-bottom:0.4rem">Clean Assessment Verdict — Zero Vulnerabilities Detected</div>
+            <div style="font-size:2.6rem; margin-bottom:0.75rem">${inconclusive ? '⚠️' : '🛡️'}</div>
+            <div style="font-size:1.25rem; font-weight:800; color:${inconclusive ? '#facc15' : 'var(--success)'}; margin-bottom:0.4rem">${inconclusive ? 'Inconclusive — Coverage Too Thin' : 'Zero Verified Findings'}</div>
             <div style="font-size:0.88rem; color:var(--text-muted); max-width:620px; margin:0 auto 1.4rem; line-height:1.6">
-              All evaluated target endpoints and parameters were tested against dynamic injection payloads, OWASP API Top 10 controls, and security misconfigurations with 0 vulnerabilities detected.
+              ${inconclusive ? 'Too few requests/templates observed to call this clean. Provide real IDs + credentials and re-run.' : `${esc(window._lastLabel || 'Zero verified findings with observed coverage.')}`}
             </div>
             <div style="display:flex; gap:0.8rem; justify-content:center; flex-wrap:wrap">
               <button class="btn btn-primary" onclick="openExecutiveReportModal()">
                 👁️ View Direct Executive Report
               </button>
-              <a class="btn" id="btnDownloadCleanPdf" target="_blank" href="/api/jobs/${currentJobId}/download?file=report.pdf">
-                📄 Download PDF
-              </a>
             </div>
           </td></tr>`;
         } else {
@@ -1500,10 +1544,10 @@
         const proto = r.type || 'http';
         return `
           <tr onclick="showFindingModal(${idx})">
-            <td><span class="badge badge-${sev}">${sev}</span></td>
-            <td><strong style="color:#fff">${tid}</strong></td>
-            <td><code style="color:var(--accent); font-size:0.8rem">${matched}</code></td>
-            <td><span style="font-size:0.75rem; color:var(--text-dim); text-transform:uppercase">${proto}</span></td>
+            <td><span class="badge badge-${esc(sev)}">${esc(sev)}</span></td>
+            <td><strong style="color:#fff">${esc(tid)}</strong></td>
+            <td><code style="color:var(--accent); font-size:0.8rem">${esc(matched)}</code></td>
+            <td><span style="font-size:0.75rem; color:var(--text-dim); text-transform:uppercase">${esc(proto)}</span></td>
             <td style="text-align:right"><button class="btn btn-sm" style="padding:0.2rem 0.55rem">Inspect</button></td>
           </tr>
         `;
@@ -1530,59 +1574,80 @@
       renderFindingsTable();
     });
 
-    // Detail Modal
-    function showFindingModal(idx) {
+    // Detail Modal — enriched engineering detail (impact + fix + evidence)
+    async function showFindingModal(idx) {
       const item = currentResults[idx];
       if (!item) return;
-
-      const sev = (item.info?.severity || 'info').toLowerCase();
       const modal = document.getElementById('detailModal');
-      const sevBadge = document.getElementById('modalSeverity');
-      sevBadge.className = `badge badge-${sev}`;
-      sevBadge.textContent = sev;
-
+      modal.classList.add('open');
       document.getElementById('modalTitle').textContent = item.info?.name || item['template-id'] || 'Vulnerability Detail';
+      document.getElementById('modalContent').innerHTML = '<div style="padding:2rem; text-align:center; color:var(--text-dim)">Loading impact & evidence…</div>';
+      let d = null;
+      try {
+        const r = await fetch(`/api/jobs/${currentJobId}/finding/${idx}`);
+        if (r.ok) d = await r.json();
+      } catch (e) { /* fall back to raw */ }
+      const sev = ((d?.severity) || (item.info?.severity) || 'info').toLowerCase();
+      const sevBadge = document.getElementById('modalSeverity');
+      sevBadge.className = `badge badge-${esc(sev)}`;
+      sevBadge.textContent = esc(sev);
+      document.getElementById('modalTitle').textContent = (d?.name) || item.info?.name || item['template-id'] || 'Vulnerability Detail';
 
-      const curl = item['curl-command'] || '';
-      const extracted = item['extracted-results'] || [];
+      const curl = d?.curl || item['curl-command'] || '';
+      const extracted = (d?.evidence?.length ? d.evidence : (item['extracted-results'] || []));
+      const refs = (d?.refs || []).map(x => `<code>${esc(x)}</code>`).join(' ');
 
       document.getElementById('modalContent').innerHTML = `
         <div style="margin-bottom:1.2rem">
           <label style="color:var(--text-dim); font-size:0.75rem; text-transform:uppercase">Impacted Endpoint</label>
-          <div style="font-size:0.95rem; font-weight:700; color:var(--accent); word-break:break-all">${item['matched-at'] || item.host || '-'}</div>
+          <div style="font-size:0.95rem; font-weight:700; color:var(--accent); word-break:break-all">${esc(d?.location || item['matched-at'] || item.host || '-')}</div>
         </div>
 
-        ${item.info?.description ? `
+        ${d ? `
+        <div style="margin-bottom:1.2rem; background:rgba(251,191,36,0.06); border:1px solid rgba(251,191,36,0.25); border-radius:8px; padding:0.8rem 1rem">
+          <label style="color:#fbbf24; font-size:0.75rem; text-transform:uppercase; font-weight:800">Business Impact (${esc(d.category || '')})</label>
+          <div style="font-size:0.88rem; color:var(--text-main); line-height:1.55; margin-top:0.25rem">${esc(d.impact)}</div>
+        </div>
+        <div style="margin-bottom:1.2rem; background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.25); border-radius:8px; padding:0.8rem 1rem">
+          <label style="color:var(--success); font-size:0.75rem; text-transform:uppercase; font-weight:800">Remediation</label>
+          <div style="font-size:0.88rem; color:var(--text-main); line-height:1.55; margin-top:0.25rem">${esc(d.remediation)}</div>
+        </div>` : ''}
+
+        ${(d?.description || item.info?.description) ? `
         <div style="margin-bottom:1.2rem">
           <label style="color:var(--text-dim); font-size:0.75rem; text-transform:uppercase">Vulnerability Description</label>
-          <div style="font-size:0.85rem; color:var(--text-main); line-height:1.5">${item.info.description}</div>
+          <div style="font-size:0.85rem; color:var(--text-main); line-height:1.5">${esc(d?.description || item.info.description)}</div>
         </div>` : ''}
 
         ${extracted.length ? `
         <div style="margin-bottom:1.2rem">
           <label style="color:var(--text-dim); font-size:0.75rem; text-transform:uppercase">Extracted Proof & Evidence</label>
-          <div class="code-preview">${extracted.join('\n')}</div>
+          <div class="code-preview">${esc(extracted.join('\n'))}</div>
+        </div>` : ''}
+
+        ${refs ? `
+        <div style="margin-bottom:1.2rem">
+          <label style="color:var(--text-dim); font-size:0.75rem; text-transform:uppercase">References (CVE / CWE)</label>
+          <div style="font-size:0.82rem">${refs}</div>
         </div>` : ''}
 
         ${curl ? `
         <div style="margin-bottom:1.2rem">
           <label style="color:var(--text-dim); font-size:0.75rem; text-transform:uppercase">Reproduction Command (cURL)</label>
           <div class="code-preview">
-            <button class="copy-btn" onclick="navigator.clipboard.writeText(\`${curl.replace(/`/g, '\\`')}\`); showToast('Copied cURL');">Copy</button>
-            ${curl}
+            <button class="copy-btn" onclick="navigator.clipboard.writeText(decodeURIComponent('${encodeURIComponent(curl)}')); showToast('Copied cURL');">Copy</button>
+            ${esc(curl)}
           </div>
         </div>` : ''}
 
         <div style="margin-bottom:1.2rem">
           <label style="color:var(--text-dim); font-size:0.75rem; text-transform:uppercase">Raw Assessment Record</label>
           <div class="code-preview">
-            <button class="copy-btn" onclick="navigator.clipboard.writeText(\`${JSON.stringify(item, null, 2).replace(/`/g, '\\`')}\`); showToast('Copied JSON');">Copy</button>
-            ${JSON.stringify(item, null, 2)}
+            <button class="copy-btn" onclick="navigator.clipboard.writeText(decodeURIComponent('${encodeURIComponent(JSON.stringify(item, null, 2))}')); showToast('Copied JSON');">Copy</button>
+            ${esc(JSON.stringify(item, null, 2))}
           </div>
         </div>
       `;
-
-      modal.classList.add('open');
     }
 
     document.getElementById('modalCloseBtn').addEventListener('click', () => {
@@ -1592,26 +1657,7 @@
       if (e.target.id === 'detailModal') document.getElementById('detailModal').classList.remove('open');
     });
 
-    // Downloads Grid
-    function updateDownloadsGrid(files) {
-      const grid = document.getElementById('downloadsGrid');
-      if (!files.length || !currentJobId) {
-        grid.innerHTML = '<span style="color:var(--text-dim); font-size:0.85rem">No assessment reports available yet.</span>';
-        return;
-      }
-      grid.innerHTML = files.map(f => {
-        const ext = f.split('.').pop().toUpperCase();
-        return `
-          <a class="dl-card" href="/api/jobs/${currentJobId}/download?file=${encodeURIComponent(f)}" target="_blank">
-            <div class="dl-icon">📄</div>
-            <div>
-              <div style="font-weight:700; font-size:0.85rem">${f}</div>
-              <div style="font-size:0.72rem; color:var(--text-dim)">Download ${ext} Report</div>
-            </div>
-          </a>
-        `;
-      }).join('');
-    }
+    // Reports are fully in-browser; no downloads grid.
 
     // Job History View
     async function loadJobHistory() {
@@ -1658,8 +1704,11 @@
         currentResults = resData.results || [];
         updateMetricsAndTable();
 
-        const filesData = await (await fetch(`/api/jobs/${jobId}/files`)).json();
-        updateDownloadsGrid(filesData.files || []);
+        try {
+          const rep = await (await fetch(`/api/jobs/${jobId}/report-data`)).json();
+          window._lastGrade = rep.score;
+          window._lastLabel = rep.score_label;
+        } catch (e) { /* grade stays unknown */ }
 
         const logRes = await (await fetch(`/api/jobs/${jobId}/log?offset=0`)).json();
         document.getElementById('terminalLog').textContent = logRes.log || '[Log not available]';
@@ -1669,14 +1718,13 @@
         const card = document.getElementById('completionCard');
         if (card) {
           card.style.display = 'block';
-          document.getElementById('btnQuickPdf').href = `/api/jobs/${jobId}/download?file=report.pdf`;
-          document.getElementById('btnQuickSarif').href = `/api/jobs/${jobId}/download?file=report.sarif`;
-          document.getElementById('btnQuickSummary').href = `/api/jobs/${jobId}/download?file=md/summary.md`;
           document.getElementById('btnGoFindings').textContent = `🔍 View Findings (${currentResults.length})`;
           document.getElementById('btnQuickReportView').onclick = () => openExecutiveReportModal(jobId);
-          document.getElementById('completionSubtitle').textContent = currentResults.length 
+          document.getElementById('completionSubtitle').textContent = currentResults.length
             ? `Identified ${currentResults.length} security vulnerabilities. View in-browser report or inspect findings below.`
-            : `All evaluated target endpoints passed cleanly with 0 vulnerabilities detected. Executive in-browser report generated.`;
+            : ((window._lastGrade === 'I')
+              ? 'Inconclusive — coverage too thin. Provide real IDs + credentials and re-run.'
+              : 'Zero verified findings with observed coverage. Executive in-browser report ready.');
         }
 
         showToast(`Loaded Assessment ${jobId}`);
@@ -1712,46 +1760,61 @@
 
         let endpointsHtml = "";
         if (res.endpoints && res.endpoints.length) {
-          endpointsHtml = res.endpoints.slice(0, 60).map(e => `
+          endpointsHtml = res.endpoints.map(e => `
             <tr>
-              <td style="width:90px"><span class="badge" style="background:#1e293b; color:#93c5fd">${e.method}</span></td>
-              <td><code style="color:var(--accent); font-size:0.82rem">${e.path}</code></td>
-              <td style="width:130px"><span style="color:var(--success); font-weight:700">✔ PASS (Clean)</span></td>
+              <td style="width:90px"><span class="badge" style="background:#1e293b; color:#93c5fd">${esc(e.method)}</span></td>
+              <td><code style="color:var(--accent); font-size:0.82rem">${esc(e.path)}</code></td>
+              <td style="width:130px"><span style="color:var(--success); font-weight:700">EVALUATED</span></td>
             </tr>
           `).join('');
         } else {
-          endpointsHtml = `<tr><td colspan="3" style="text-align:center; color:var(--text-dim)">${s.filename || 'Target URL evaluated'}</td></tr>`;
+          endpointsHtml = `<tr><td colspan="3" style="text-align:center; color:var(--text-dim)">${esc(s.filename || 'Target URL evaluated')}</td></tr>`;
         }
 
+        const ctlBadge = (st) => st === 'TESTED'
+          ? '<span class="badge" style="background:rgba(16, 185, 129, 0.15); color:var(--success); border:1px solid rgba(16, 185, 129, 0.3)">✔ TESTED</span>'
+          : st === 'SKIPPED'
+          ? '<span class="badge" style="background:rgba(148,163,184,0.12); color:#94a3b8; border:1px solid rgba(148,163,184,0.3)">○ SKIPPED</span>'
+          : '<span class="badge" style="background:rgba(250,204,21,0.12); color:#facc15; border:1px solid rgba(250,204,21,0.3)">? INCONCLUSIVE</span>';
         let controlsHtml = res.tested_controls.map(c => `
           <tr>
-            <td style="width:240px"><strong style="color:#fff">${c.name}</strong></td>
-            <td style="font-size:0.82rem; color:var(--text-muted)">${c.desc}</td>
-            <td style="width:120px"><span class="badge" style="background:rgba(16, 185, 129, 0.15); color:var(--success); border:1px solid rgba(16, 185, 129, 0.3)">✔ PASSED</span></td>
+            <td style="width:240px"><strong style="color:#fff">${esc(c.name)}</strong></td>
+            <td style="font-size:0.82rem; color:var(--text-muted)">${esc(c.desc)}</td>
+            <td style="width:120px">${ctlBadge(c.status)}</td>
           </tr>
         `).join('');
 
+        const det = res.detailed || [];
         let findingsHtml = "";
-        if (res.findings && res.findings.length) {
-          findingsHtml = res.findings.map(f => {
-            const sev = (f.info?.severity || 'info').toLowerCase();
-            return `
-              <tr>
-                <td style="width:110px"><span class="badge badge-${sev}">${sev}</span></td>
-                <td><strong style="color:#fff">${f.info?.name || f['template-id']}</strong></td>
-                <td><code style="color:var(--accent); font-size:0.82rem">${f['matched-at'] || f.host}</code></td>
-              </tr>
-            `;
-          }).join('');
+        if (det.length) {
+          findingsHtml = det.map(f => `
+            <div style="background:#0b1120; border:1px solid var(--card-border); border-radius:8px; padding:1rem 1.1rem; margin-bottom:1rem">
+              <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap">
+                <span class="badge badge-${esc((f.severity || 'info').toLowerCase())}">${esc((f.severity || 'info').toUpperCase())}</span>
+                <strong style="color:#fff">${esc(f.name)}</strong>
+                <span style="font-size:0.75rem; color:var(--text-dim)">[${esc(f.source)} · ${esc(f.rule)}]</span>
+              </div>
+              <div style="margin:0.4rem 0"><code style="color:var(--accent); font-size:0.82rem">${esc(f.location)}</code></div>
+              <div style="font-size:0.85rem; color:#fbbf24; margin:0.3rem 0"><strong>Impact (${esc(f.category || '')}):</strong> ${esc(f.impact)}</div>
+              <div style="font-size:0.85rem; color:var(--text-muted)"><strong style="color:var(--success)">Fix:</strong> ${esc(f.remediation)}</div>
+              ${(f.evidence || []).slice(0, 3).map(x => `<div class="code-preview" style="margin-top:0.4rem">${esc(x).slice(0, 500)}</div>`).join('')}
+            </div>
+          `).join('');
+        } else if (res.score === 'I') {
+          findingsHtml = `
+            <div style="text-align:center; padding:2rem; background:rgba(250,204,21,0.05); border:1px solid rgba(250,204,21,0.3); border-radius:8px">
+              <div style="font-size:2rem; margin-bottom:0.4rem">⚠️</div>
+              <div style="font-weight:800; color:#facc15; font-size:1.05rem">Inconclusive — ${esc(res.score_label)}</div>
+              <div style="font-size:0.84rem; color:var(--text-muted); margin-top:0.3rem">Coverage too thin to call this clean. Provide real IDs + credentials and re-run.</div>
+            </div>
+          `;
         } else {
           findingsHtml = `
-            <tr>
-              <td colspan="3" style="text-align:center; padding:2rem; background:rgba(16, 185, 129, 0.04)">
-                <div style="font-size:2rem; margin-bottom:0.4rem">🛡️ ✨</div>
-                <div style="font-weight:800; color:var(--success); font-size:1.05rem">Clean Assessment Verdict — 0 Vulnerabilities Detected</div>
-                <div style="font-size:0.84rem; color:var(--text-muted); margin-top:0.3rem">All evaluated target endpoints passed automated dynamic security tests with 0 vulnerabilities detected.</div>
-              </td>
-            </tr>
+            <div style="text-align:center; padding:2rem; background:rgba(16, 185, 129, 0.04); border-radius:8px">
+              <div style="font-size:2rem; margin-bottom:0.4rem">🛡️</div>
+              <div style="font-weight:800; color:var(--success); font-size:1.05rem">Zero verified findings with observed coverage</div>
+              <div style="font-size:0.84rem; color:var(--text-muted); margin-top:0.3rem">${esc(res.score_label)} — see coverage stats above.</div>
+            </div>
           `;
         }
 
@@ -1760,9 +1823,9 @@
           <div style="background:linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(14, 165, 233, 0.06)); border:1px solid rgba(99, 102, 241, 0.35); border-radius:10px; padding:1.5rem; margin-bottom:1.5rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem">
             <div>
               <div style="font-size:0.75rem; font-weight:800; color:var(--accent); text-transform:uppercase; letter-spacing:0.06em">INFINITY SECURITY SUITE • EXECUTIVE REPORT</div>
-              <div style="font-size:1.35rem; font-weight:900; color:#fff; margin-top:0.25rem">${s.filename || 'Target Security Audit'}</div>
+              <div style="font-size:1.35rem; font-weight:900; color:#fff; margin-top:0.25rem">${esc(s.filename || 'Target Security Audit')}</div>
               <div style="font-size:0.82rem; color:var(--text-dim); margin-top:0.35rem">
-                Assessment ID: <code style="color:#fff">${targetJobId}</code> • Profile: <span style="text-transform:uppercase; color:var(--accent)">${s.scan_type}</span> • Duration: <strong>${res.scan_time_str}</strong>
+                Assessment ID: <code style="color:#fff">${esc(targetJobId)}</code> • Profile: <span style="text-transform:uppercase; color:var(--accent)">${esc(s.scan_type)}</span> • Duration: <strong>${esc(res.scan_time_str)}</strong>
               </div>
             </div>
             <div style="text-align:center; min-width:150px; background:rgba(0,0,0,0.35); padding:0.9rem 1.4rem; border-radius:8px; border:1px solid rgba(255,255,255,0.08)">
@@ -1783,18 +1846,18 @@
             </div>
             <div class="stat-card" style="background:#0b1120; border:1px solid var(--card-border); padding:1rem; border-radius:8px">
               <div style="font-size:0.72rem; color:var(--text-dim); text-transform:uppercase; font-weight:700">Requests Evaluated</div>
-              <div style="font-size:1.4rem; font-weight:800; color:#fff; margin-top:0.2rem">${res.requests_sent || '24,850+'}</div>
+              <div style="font-size:1.4rem; font-weight:800; color:#fff; margin-top:0.2rem">${res.requests_sent || '—'}</div>
             </div>
             <div class="stat-card" style="background:#0b1120; border:1px solid var(--card-border); padding:1rem; border-radius:8px">
               <div style="font-size:0.72rem; color:var(--text-dim); text-transform:uppercase; font-weight:700">Vulnerabilities Found</div>
-              <div style="font-size:1.4rem; font-weight:800; color:${res.score_color}; margin-top:0.2rem">${res.findings.length}</div>
+              <div style="font-size:1.4rem; font-weight:800; color:${res.score_color}; margin-top:0.2rem">${det.length}</div>
             </div>
           </div>
 
           <!-- Section 1: Verified Controls -->
           <div style="margin-bottom:1.8rem">
             <h4 style="color:var(--accent); font-size:0.95rem; font-weight:800; margin-bottom:0.7rem; border-bottom:1px solid var(--card-border); padding-bottom:0.4rem">
-              1. Verified Security Controls & Methodology
+              1. Verified Security Controls & Methodology (TESTED / SKIPPED / INCONCLUSIVE — never assumed)
             </h4>
             <div class="table-container">
               <table style="width:100%">
@@ -1804,17 +1867,12 @@
             </div>
           </div>
 
-          <!-- Section 2: Identified Vulnerabilities -->
+          <!-- Section 2: Identified Vulnerabilities + Impact -->
           <div style="margin-bottom:1.8rem">
             <h4 style="color:var(--accent); font-size:0.95rem; font-weight:800; margin-bottom:0.7rem; border-bottom:1px solid var(--card-border); padding-bottom:0.4rem">
-              2. Identified Vulnerabilities (${res.findings.length})
+              2. Identified Vulnerabilities & Business Impact (${det.length})
             </h4>
-            <div class="table-container">
-              <table style="width:100%">
-                <thead><tr><th style="width:110px">Severity</th><th>Vulnerability Name</th><th>Impacted URL / Resource</th></tr></thead>
-                <tbody>${findingsHtml}</tbody>
-              </table>
-            </div>
+            ${findingsHtml}
           </div>
 
           <!-- Section 3: Evaluated Routes -->
@@ -1823,7 +1881,7 @@
               <h4 style="color:var(--accent); font-size:0.95rem; font-weight:800; margin:0">
                 3. Evaluated Endpoints & API Routes (${res.endpoints.length})
               </h4>
-              <span style="font-size:0.75rem; color:var(--text-dim)">Showing up to 60 routes</span>
+              <span style="font-size:0.75rem; color:var(--text-dim)">All routes evaluated (scroll)</span>
             </div>
             <div class="table-container" style="max-height:260px; overflow-y:auto">
               <table style="width:100%">

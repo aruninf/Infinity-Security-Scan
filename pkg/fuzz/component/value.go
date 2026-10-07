@@ -102,6 +102,13 @@ func (v *Value) SetParsedValue(key, value string) bool {
 		origValue = v
 	case string:
 		origValue = value
+	case map[string]interface{}:
+		// Flattening keeps empty objects ({}) as map values since there are
+		// no leaves to expand. Replacing the whole subtree with the payload
+		// is a legitimate type-confusion probe; previously this fell through
+		// to the warning below and silently sent the UNFUZZED body while
+		// reporting success (fake coverage + log spam).
+		origValue = value
 	case int, int32, int64, float32, float64:
 		parsed, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
@@ -122,8 +129,12 @@ func (v *Value) SetParsedValue(key, value string) bool {
 			}
 			origValue = val
 		} else {
-			// make it default warning instead of error
+			// Unknown container types (ex: non-string maps from xml/other
+			// decoders) cannot take a string payload. Report failure so the
+			// caller skips this point (ErrSetValue) instead of sending an
+			// unfuzzed duplicate that inflates request counts.
 			gologger.DefaultLogger.Print().Msgf("[%v] unknown type %T for value %s", aurora.BrightYellow("WARN"), v, v)
+			return false
 		}
 	}
 	v.parsed.Set(key, origValue)

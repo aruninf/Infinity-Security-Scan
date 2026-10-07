@@ -1,0 +1,41 @@
+# SecLists adaptor — reference by path, never vendor the 5GB repo.
+# Set SECLISTS_DIR to your local checkout (sparse), e.g.
+#   git clone --depth 1 --sparse https://github.com/danielmiessler/SecLists.git
+#   git sparse-checkout set Discovery/Web-Content Fuzzing Payloads Usernames Passwords
+# The fusion runner resolves $SECLISTS_DIR/<path> and warns (never fails) if absent.
+# MIT-licensed upstream; AV false positives expected — whitelist the folder.
+
+profiles:
+  web-discovery:
+    use_for: "exposed panels, .env/.git/backups, admin routes, tech fingerprint"
+    nuclei_tags: "exposure,panel,tech,misconfig"
+    files:
+      - "Discovery/Web-Content/common.txt"
+      - "Discovery/Web-Content/raft-small-directories.txt"
+      - "Discovery/Web-Content/common-api-endpoints-mazen160.txt"
+      - "Discovery/Web-Content/Common-DB-Backups.txt"
+
+  api-fuzz-dictionary:
+    use_for: "schemathesis --fuzz-dictionary + nuclei -dast extra payloads"
+    nuclei_tags: "dast,owasp,api"
+    files:
+      - "Fuzzing/big-list-of-naughty-strings.txt"
+      - "Fuzzing/XSS/XSS-RSnake.txt"
+      - "Fuzzing/SQLi/quick-SQLi.txt"
+      - "Fuzzing/template-engines-expression.txt"
+      - "Fuzzing/XXE-Fuzzing.txt"
+      - "Fuzzing/LFI/LFI-Jhaddix.txt"
+
+  auth-brute:
+    use_for: "login / token / default-cred checks (rate-limit!)"
+    nuclei_tags: "misconfig,exposure"
+    files:
+      - "Usernames/top-usernames-shortlist.txt"
+      - "Passwords/Common-Credentials/10-million-password-list-top-10000.txt"
+      - "Fuzzing/login_bypass.txt"
+
+  method-header:
+    use_for: "verb tampering + header injection"
+    files:
+      - "Fuzzing/http-request-methods.txt"
+      - "Fuzzing/User-Agents/top-user-agents.txt"
