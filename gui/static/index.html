@@ -9,36 +9,36 @@
   <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-void: #02050c;
-      --bg-base: #02050c;
-      --bg-surface: rgba(8, 14, 26, 0.88);
-      --bg-elevated: rgba(14, 22, 38, 0.94);
-      --bg-card: rgba(11, 18, 34, 0.85);
-      --bg-card-hover: rgba(18, 28, 52, 0.92);
-      --bg-input: rgba(4, 9, 20, 0.92);
-      --border-subtle: rgba(6, 182, 212, 0.22);
-      --border-medium: rgba(6, 182, 212, 0.38);
-      --border-strong: rgba(0, 240, 255, 0.7);
-      --text-main: #f8fafc;
+      --bg-void: #080c14;
+      --bg-base: #080c14;
+      --bg-surface: rgba(13, 19, 34, 0.88);
+      --bg-elevated: rgba(18, 26, 46, 0.94);
+      --bg-card: rgba(15, 23, 42, 0.76);
+      --bg-card-hover: rgba(20, 30, 52, 0.88);
+      --bg-input: rgba(10, 16, 28, 0.92);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-medium: rgba(56, 189, 248, 0.25);
+      --border-strong: rgba(56, 189, 248, 0.55);
+      --text-main: #f1f5f9;
       --text-muted: #94a3b8;
       --text-dim: #64748b;
-      --primary: #06b6d4;
-      --primary-hover: #00f0ff;
-      --primary-glow: rgba(0, 240, 255, 0.35);
-      --accent: #00f0ff;
-      --accent-glow: rgba(0, 240, 255, 0.28);
-      --cyan: #00f0ff;
-      --cyan-dim: #06b6d4;
-      --violet: #8b5cf6;
-      --violet-glow: rgba(139, 92, 246, 0.35);
+      --primary: #0284c7;
+      --primary-hover: #0ea5e9;
+      --primary-glow: rgba(56, 189, 248, 0.25);
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.2);
+      --cyan: #38bdf8;
+      --cyan-dim: #0284c7;
+      --violet: #818cf8;
+      --violet-glow: rgba(129, 140, 248, 0.2);
       --success: #10b981;
-      --success-glow: rgba(16, 185, 129, 0.25);
+      --success-glow: rgba(16, 185, 129, 0.2);
       --warning: #f59e0b;
-      --warning-glow: rgba(245, 158, 11, 0.25);
+      --warning-glow: rgba(245, 158, 11, 0.2);
       --danger: #f43f5e;
-      --danger-glow: rgba(244, 63, 94, 0.3);
+      --danger-glow: rgba(244, 63, 94, 0.25);
       --info: #38bdf8;
-      --grad-cyber: linear-gradient(135deg, #00f0ff 0%, #6366f1 50%, #c084fc 100%);
+      --grad-cyber: linear-gradient(135deg, #f8fafc 0%, #cbd5e1 45%, #38bdf8 100%);
       --font-cyber: 'Chakra Petch', -apple-system, sans-serif;
       --font-mono: 'JetBrains Mono', monospace;
       --font-body: 'Inter', -apple-system, sans-serif;
@@ -62,23 +62,16 @@
       position: relative;
     }
 
-    /* Scanlines and Ambient Canvas */
+    /* Scanlines disabled for crisp rendering */
     .scanlines {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 99;
-      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.22) 50%),
-                  linear-gradient(90deg, rgba(255, 0, 0, 0.015), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.015));
-      background-size: 100% 3px, 6px 100%;
-      opacity: 0.5;
+      display: none;
     }
     #cyber-canvas {
       position: fixed;
       inset: 0;
       z-index: 0;
       pointer-events: none;
-      opacity: 0.45;
+      opacity: 0.65;
     }
     .vignette {
       position: fixed;
@@ -86,9 +79,8 @@
       z-index: 1;
       pointer-events: none;
       background: 
-        radial-gradient(circle at 18% 28%, rgba(6, 182, 212, 0.08), transparent 48%),
-        radial-gradient(circle at 82% 72%, rgba(139, 92, 246, 0.1), transparent 52%),
-        radial-gradient(circle at 50% 50%, transparent 60%, rgba(2, 5, 12, 0.85) 100%);
+        radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.08), transparent 60%),
+        radial-gradient(circle at 50% 100%, rgba(14, 22, 38, 0.6), transparent 75%);
     }
     header, main, footer, #toast, .modal-overlay {
       position: relative;
@@ -330,8 +322,7 @@
     /* Cards */
     .card {
       background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-left: 3px solid var(--cyan);
+      border: 1px solid rgba(6, 182, 212, 0.24);
       border-radius: 6px;
       padding: 1.4rem 1.6rem;
       margin-bottom: 1.35rem;
@@ -1367,7 +1358,7 @@
         <div class="form-group" style="margin-top:0.85rem">
           <label for="scopeInput">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            Limit Scope to Specific Path Prefix (optional — e.g. <code>/api/v1/auth</code>):
+            Limit Scope to Specific Path Prefix (optional, e.g. <code>/api/v1/auth</code>):
           </label>
           <input type="text" id="scopeInput" placeholder="/api/v1/auth  (blank = entire attack surface)">
         </div>
@@ -1534,7 +1525,7 @@
           <div>
             <div style="display:flex; align-items:center; gap:0.55rem">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-              <div style="font-size:1.05rem; font-weight:800; color:var(--success)" id="completionTitle">Assessment Complete — Reports Ready</div>
+              <div style="font-size:1.05rem; font-weight:800; color:var(--success)" id="completionTitle">Assessment Complete: Reports Ready</div>
             </div>
             <div style="font-size:0.82rem; color:var(--text-muted); margin-top:0.3rem" id="completionSubtitle">
               All endpoints evaluated. View the in-browser executive report or inspect findings below.
@@ -1648,7 +1639,8 @@
           <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap">
             <div style="display:flex; gap:0.8rem; align-items:center; flex:1; max-width:550px">
               <input type="text" id="findingSearchInput" placeholder="Search vulnerability name, path, CVE, CWE...">
-              <select id="findingSevSelect" style="max-width:170px">
+              <!-- ds-allow-native-select -->
+              <select id="findingSevSelect" style="max-width:170px" aria-label="Filter vulnerabilities by severity">
                 <option value="">All Severities</option>
                 <option value="critical">Critical</option>
                 <option value="high">High</option>
@@ -1778,12 +1770,14 @@
         <div style="display:flex; gap:1rem; margin-bottom:1.2rem; align-items:center; flex-wrap:wrap">
           <div style="flex:1">
             <label style="font-size:0.75rem; color:var(--text-dim); text-transform:uppercase; font-weight:700">Baseline Scan (Older):</label>
-            <select id="compareBaseSelect"></select>
+            <!-- ds-allow-native-select -->
+            <select id="compareBaseSelect" aria-label="Select baseline scan"></select>
           </div>
           <div style="font-size:1.2rem; color:var(--text-dim); padding-top:1rem">→</div>
           <div style="flex:1">
             <label style="font-size:0.75rem; color:var(--text-dim); text-transform:uppercase; font-weight:700">Target Scan (Newer):</label>
-            <select id="compareTargetSelect"></select>
+            <!-- ds-allow-native-select -->
+            <select id="compareTargetSelect" aria-label="Select target scan to compare"></select>
           </div>
           <button class="btn btn-primary btn-sm" id="btnExecuteCompare" style="margin-top:1rem">Run Diff Comparison</button>
         </div>
@@ -1991,7 +1985,7 @@
           showToast(`Applied: ${res.recommended_concurrency} workers, ${res.recommended_rate_limit} req/s`, 'success');
         };
 
-        showToast(res.online ? `Pre-flight OK: ${res.target} (${res.latency_ms}ms) — Discovered ${(res.discovered_routes || []).length} routes` : `Pre-flight warning: ${res.status}`, res.online ? 'success' : 'warning');
+        showToast(res.online ? `Pre-flight OK: ${res.target} (${res.latency_ms}ms), Discovered ${(res.discovered_routes || []).length} routes` : `Pre-flight warning: ${res.status}`, res.online ? 'success' : 'warning');
       } catch (e) {
         showToast("Diagnostic error: " + e, 'error');
       } finally {
@@ -2610,7 +2604,7 @@
       }
       const modal = document.getElementById('reportModal');
       const content = document.getElementById('reportModalContent');
-      document.getElementById('reportModalTitle').textContent = `Executive Security Assessment Report — ${targetJobId}`;
+      document.getElementById('reportModalTitle').textContent = `Executive Security Assessment Report: ${targetJobId}`;
       document.getElementById('reportModalNewTabLink').href = `/api/jobs/${targetJobId}/view-report`;
       modal.classList.add('open');
 
@@ -2703,78 +2697,42 @@
     updateAppClock();
 
     // Ambient Cyber Canvas Loop
-    (function initCyberCanvas() {
+    (function initArchitecturalCanvas() {
       const cv = document.getElementById('cyber-canvas');
       if (!cv) return;
       const cx = cv.getContext('2d');
       let W, H;
-      let drops = [];
-      const glyphs = '0101010101ABCDEF9342DASTSSRFXSSIDORCVE200OK';
-      function resize() {
+      function render() {
         W = cv.width = window.innerWidth;
         H = cv.height = window.innerHeight;
-        const cols = Math.floor(W / 32);
-        drops = [];
-        for (let i = 0; i < cols; i++) {
-          drops.push({
-            x: i * 32 + Math.random() * 8,
-            y: Math.random() * -H,
-            speed: 0.8 + Math.random() * 1.6,
-            char: glyphs[Math.floor(Math.random() * glyphs.length)],
-            opacity: 0.08 + Math.random() * 0.25
-          });
-        }
-      }
-      window.addEventListener('resize', resize);
-      resize();
-
-      let gridOff = 0;
-      function render() {
         cx.clearRect(0, 0, W, H);
-        const horizonY = H * 0.72;
-        const vanishX = W * 0.5;
-
-        // Subtle Perspective Grid
-        cx.save();
-        cx.strokeStyle = 'rgba(6, 182, 212, 0.07)';
-        cx.lineWidth = 1;
-        const lineCount = 30;
-        for (let i = -lineCount; i <= lineCount; i++) {
-          const startX = vanishX + (i * (W / lineCount) * 1.8);
-          cx.beginPath();
-          cx.moveTo(vanishX, horizonY);
-          cx.lineTo(startX, H);
-          cx.stroke();
-        }
-        gridOff = (gridOff + 0.5) % 32;
-        for (let y = 0; y < 10; y++) {
-          const p = (y * 32 + gridOff) / (10 * 32);
-          const py = horizonY + Math.pow(p, 2.2) * (H - horizonY);
-          const alpha = Math.min(0.18, Math.pow(p, 1.8) * 0.25);
-          cx.strokeStyle = `rgba(0, 240, 255, ${alpha})`;
-          cx.beginPath();
-          cx.moveTo(0, py);
-          cx.lineTo(W, py);
-          cx.stroke();
-        }
-        cx.restore();
-
-        // Subtle Code Rain
-        cx.font = '11px monospace';
-        for (let i = 0; i < drops.length; i++) {
-          const d = drops[i];
-          cx.fillStyle = `rgba(0, 240, 255, ${d.opacity})`;
-          cx.fillText(d.char, d.x, d.y);
-          d.y += d.speed;
-          if (Math.random() > 0.95) d.char = glyphs[Math.floor(Math.random() * glyphs.length)];
-          if (d.y > H) {
-            d.y = Math.random() * -100;
-            d.speed = 0.8 + Math.random() * 1.6;
+        
+        // Clean engineering grid with subtle coordinates
+        const spacing = 44;
+        cx.fillStyle = 'rgba(255, 255, 255, 0.035)';
+        for (let x = spacing; x < W; x += spacing) {
+          for (let y = spacing; y < H; y += spacing) {
+            cx.beginPath();
+            cx.arc(x, y, 0.9, 0, Math.PI * 2);
+            cx.fill();
           }
         }
-        requestAnimationFrame(render);
+        
+        // Subtle corner crosshairs
+        cx.strokeStyle = 'rgba(56, 189, 248, 0.09)';
+        cx.lineWidth = 1;
+        const crossSpacing = spacing * 4;
+        for (let x = crossSpacing; x < W; x += crossSpacing) {
+          for (let y = crossSpacing; y < H; y += crossSpacing) {
+            cx.beginPath();
+            cx.moveTo(x - 5, y); cx.lineTo(x + 5, y);
+            cx.moveTo(x, y - 5); cx.lineTo(x, y + 5);
+            cx.stroke();
+          }
+        }
       }
-      requestAnimationFrame(render);
+      window.addEventListener('resize', render);
+      render();
     })();
   </script>
 </body>

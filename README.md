@@ -111,6 +111,13 @@ spec / URLs in → sanitize → path-scope slice → auto-login (+verify token)
 
 ---
 
+## Technical Architecture & Security Assessments
+
+- 📖 **[How It Works (Technical Architecture)](HOW_IT_WORKS.md)**: Detailed breakdown of the multi-phase scanning pipeline, OpenAPI ingestion, AST input discovery, auto-login token validation, and artifact fusion.
+- 🛡️ **[Data Leakage & Security Assessment](DATA_LEAKAGE_ANALYSIS.md)**: Exhaustive security audit covering out-of-band telemetry (OAST / Interactsh), process table isolation, credential redaction, job scratch storage hygiene, and air-gapped enterprise hardening.
+
+---
+
 ## License
 
 MIT / Apache 2.0.

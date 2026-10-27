@@ -414,8 +414,12 @@ def fetch_spec_url(url: str) -> tuple[bytes, str]:
 
 
 def _redact(line: str) -> str:
-    # Never persist bearer tokens / passwords to run.log (it is downloadable).
-    line = re.sub(r"(Bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1***", line)
+    # Never persist bearer tokens, passwords, or secret keys to run.log (downloadable artifact).
+    if not line:
+        return line
+    line = re.sub(r"(Bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1***", line, flags=re.IGNORECASE)
+    line = re.sub(r"(Basic\s+)[A-Za-z0-9+/=]+", r"\1***", line, flags=re.IGNORECASE)
+    line = re.sub(r"((?:token|password|passwd|api[_-]?key|secret|authorization)\s*[:=]\s*)[^\s,;&\"']+", r"\1***", line, flags=re.IGNORECASE)
     return line
 
 
@@ -432,7 +436,7 @@ def _run_one(cmd: list[str], job: dict, log) -> int:
     )
     job["proc"] = proc
     for line in proc.stdout or []:
-        log.write(line)
+        log.write(_redact(line))
         log.flush()
     proc.wait()
     return proc.returncode
@@ -1184,6 +1188,17 @@ async def start_scan(
         except Exception:
             pass
 
+    # Save headers to 0600 file so bearer tokens never leak in ps aux process table
+    header_lines = [l.strip() for l in headers.splitlines() if l.strip() and ":" in l]
+    headers_file: Path | None = None
+    if header_lines:
+        headers_file = job_dir / "headers.txt"
+        headers_file.write_text("\n".join(header_lines) + "\n")
+        try:
+            os.chmod(headers_file, 0o600)
+        except Exception:
+            pass
+
     def _phase(suffix: str, with_dast: bool) -> list[str]:
         c = [
             bin_path,
@@ -1217,10 +1232,8 @@ async def start_scan(
             c += ["-tags", tags.strip()]
         if severity.strip():
             c += ["-severity", severity.strip()]
-        for line in headers.splitlines():
-            line = line.strip()
-            if line and ":" in line:
-                c += ["-H", line]
+        if headers_file and headers_file.exists():
+            c += ["-H", str(headers_file)]
         for line in vars.splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
