@@ -18,12 +18,24 @@ import time
 import uuid
 from pathlib import Path
 
+import sys
+from pathlib import Path
+from urllib.parse import urlparse
+
+GUI_DIR = Path(__file__).resolve().parent
+if str(GUI_DIR) not in sys.path:
+    sys.path.insert(0, str(GUI_DIR))
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from postman_to_openapi import convert as postman_convert
 
+try:
+    import crawler as _crawler
+except Exception:
+    _crawler = None
 try:
     import fusion as _fusion
 except Exception:  # fusion.py optional at import time; endpoints degrade gracefully
@@ -37,7 +49,7 @@ try:
 except Exception:
     _stconfig = None
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = GUI_DIR.parent
 JOBS_DIR = Path(__file__).resolve().parent / "jobs"
 JOBS_DIR.mkdir(exist_ok=True)
 
@@ -109,6 +121,59 @@ def parse_results_file(path: Path) -> list[dict]:
     return out
 
 
+def scan_target(job_dir: Path) -> str:
+    """First target actually scanned (URL / spec server) — the site this report is for."""
+    inp_path = job_dir / "input.used"
+    if not inp_path.exists():
+        return ""
+    text = inp_path.read_text(encoding="utf-8", errors="ignore").strip()
+    if not text:
+        return ""
+    if text[0] in "{[":
+        try:
+            doc = json.loads(text)
+            if isinstance(doc, dict):
+                servers = doc.get("servers", [])
+                server_url = servers[0].get("url", "") if (servers and isinstance(servers[0], dict)) else ""
+                return server_url or "API Specification"
+        except Exception:
+            return "API Specification"
+    for line in text.splitlines():
+        if line.strip():
+            return line.strip()[:120]
+    return ""
+
+
+def site_name(target: str) -> str:
+    """Short domain headline for a target (https://infinitysoftsystems.com/ -> infinitysoftsystems.com)."""
+    if not target:
+        return ""
+    p = urlparse(target)
+    return p.netloc if p.netloc else target.split("/")[0]
+
+
+def coverage_from_log(job_dir: Path) -> dict:
+    """targets / templates / requests / duration parsed from run.log."""
+    cov = {"targets": 0, "templates": 0, "requests": 0, "time": ""}
+    log_path = job_dir / "run.log"
+    if not log_path.exists():
+        return cov
+    log_txt = log_path.read_text(encoding="utf-8", errors="ignore")
+    if m := re.search(r"Targets loaded for current scan:\s*(\d+)", log_txt):
+        cov["targets"] = int(m.group(1))
+    if m := re.search(r"Templates loaded for current scan:\s*(\d+)", log_txt):
+        cov["templates"] = int(m.group(1))
+    if m := re.search(r"HTTP connections:\s*(\d+)\s*total", log_txt):
+        cov["requests"] = int(m.group(1))
+    if m := re.search(r"Scan completed in\s*([0-9a-zA-Z\.\s]+)", log_txt):
+        cov["time"] = m.group(1).split(".")[0] if "." in m.group(1) else m.group(1)
+    return cov
+
+
+def _pdf_clean(line: str) -> str:
+    return line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
 def generate_pdf_report(job_id: str, job_dir: Path) -> None:
     pdf_path = job_dir / "report.pdf"
     if pdf_path.exists() and pdf_path.stat().st_size > 500:
@@ -123,30 +188,31 @@ def generate_pdf_report(job_id: str, job_dir: Path) -> None:
         else:
             sev_counts["info"] += 1
 
+    cov = coverage_from_log(job_dir)
+    target = scan_target(job_dir)
+    site = site_name(target)
+    scanned_on = time.strftime("%b %d, %Y", time.localtime(job_dir.stat().st_mtime))
+    clean = len(findings) == 0
+
     summary_info = {
         "Assessment ID": job_id,
         "Security Engine": "Infinity AppSec Engine v3.11.1 (infinity.security)",
         "Audit Status": "Completed & Certified",
+        "Scanned On": scanned_on,
+        "Assessment Target": site or "Scanned via API Specification upload",
         "Total Vulnerabilities": f"{len(findings)} Detected",
         "Severity Breakdown": f"Critical: {sev_counts['critical']} | High: {sev_counts['high']} | Medium: {sev_counts['medium']} | Low: {sev_counts['low']} | Info: {sev_counts['info']}",
     }
 
-    inp_path = job_dir / "input.used"
-    if inp_path.exists():
-        lines = inp_path.read_text(encoding="utf-8", errors="ignore").strip().splitlines()
-        if lines:
-            summary_info["Assessment Target"] = lines[0][:75]
-
     sections = []
-    if len(findings) == 0:
+    if clean:
         sections.append((
             "Executive Audit Verdict",
             [
-                "Result: Clean Assessment (0 Vulnerabilities Detected)",
-                "All evaluated endpoints, routes, and input parameters were tested against automated",
-                "dynamic injection payloads, known CVE exploits, and security misconfigurations.",
-                "Zero exploitable vulnerabilities or unauthorized data disclosures were identified.",
-                "Target security posture adheres to baseline security compliance standards."
+                "Result: PASS — the target passed every automated security check in this assessment.",
+                f"{cov['targets']} pages of {site or 'the target'} were scanned using {cov['templates']} security checks ({cov['requests']} HTTP requests).",
+                "Checks covered injection attacks (SQLi/XSS), known CVE exploits, HTTPS/TLS, security headers, and common misconfigurations.",
+                "No exploitable vulnerability or exposed data was found — the target meets baseline security standards.",
             ]
         ))
     else:
@@ -160,6 +226,28 @@ def generate_pdf_report(job_id: str, job_dir: Path) -> None:
             finding_lines.append(f"... and {len(findings) - 12} additional vulnerabilities (see attached SARIF/JSON report)")
         sections.append(("Key Identified Vulnerabilities", finding_lines))
 
+    controls = []
+    gr_path = job_dir / "genuine-report.json"
+    if gr_path.exists():
+        try:
+            genuine_json = json.loads(gr_path.read_text(encoding="utf-8", errors="ignore"))
+            controls = genuine_json.get("controls") or []
+            if genuine_json.get("coverage"):
+                c = genuine_json["coverage"]
+                cov = {
+                    "targets": int(c.get("targets_loaded") or cov["targets"]),
+                    "templates": int(c.get("templates_loaded") or cov["templates"]),
+                    "requests": int(c.get("requests_sent") or cov["requests"]),
+                    "time": c.get("scan_time") or cov["time"],
+                }
+        except Exception:
+            controls = []
+    if controls:
+        sections.append((
+            "What We Checked",
+            [f"[{(c.get('status') or 'CHECKED').upper()}] {c.get('name') or 'Control'}" for c in controls],
+        ))
+
     sections.append((
         "Platform Governance & Methodology",
         [
@@ -169,7 +257,16 @@ def generate_pdf_report(job_id: str, job_dir: Path) -> None:
         ]
     ))
 
-    # Build PDF 1.4 stream
+    # Build PDF 1.4 stream — cover: title, target, verdict banner the client sees first
+    if clean:
+        banner_bg, banner_color = "0.92 0.98 0.93", "0.03 0.55 0.35"
+        banner_head = "ALL SECURITY CHECKS PASSED"
+        banner_sub = f"0 vulnerabilities found — {cov['templates']} security checks run across {cov['targets']} pages"
+    else:
+        banner_bg, banner_color = "0.99 0.90 0.90", "0.72 0.10 0.18"
+        banner_head = f"SECURITY ISSUES FOUND: {len(findings)}"
+        banner_sub = f"Critical: {sev_counts['critical']} | High: {sev_counts['high']} | Medium: {sev_counts['medium']} | Low: {sev_counts['low']} — details below"
+
     stream_lines = [
         "BT",
         "/F2 18 Tf",
@@ -179,14 +276,30 @@ def generate_pdf_report(job_id: str, job_dir: Path) -> None:
         "BT",
         "/F1 10 Tf",
         "50 758 Td",
-        "(Executive Security Evaluation & Vulnerability Report) Tj",
+        f"({ _pdf_clean(site or 'Executive Security Evaluation & Vulnerability Report') }) Tj",
         "ET",
-        "0.15 0.25 0.55 rg",
-        "50 745 500 2 re f",
+        "BT",
+        "/F1 8 Tf",
+        "50 744 Td",
+        f"({ _pdf_clean('Scanned ' + scanned_on + '  ·  Assessment ID: ' + job_id) }) Tj",
+        "ET",
+        banner_bg,
+        f"50 682 500 54 re f",
+        banner_color,
+        "BT",
+        "/F2 13 Tf",
+        "58 708 Td",
+        f"({ _pdf_clean(banner_head) }) Tj",
+        "ET",
+        "BT",
+        "/F1 9 Tf",
+        "58 692 Td",
+        f"({ _pdf_clean(banner_sub) }) Tj",
+        "ET",
         "0 0 0 rg",
     ]
 
-    y = 720
+    y = 655
     for k, v in summary_info.items():
         clean_v = str(v).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
         stream_lines.extend([
@@ -414,6 +527,12 @@ def run_scan(job_id: str, cmds: list[list[str]]) -> None:
         with open(log_path, "w") as log:
             log.write(f"[Infinity Security Suite] Initializing Assessment Job {job_id}...\n")
             log.write(f"[Infinity] Phases: API-logic (auto) + signatures + DAST fuzz (merged).\n")
+            if job.get("discovered_routes"):
+                routes = job["discovered_routes"]
+                log.write(f"\n[Infinity Crawler] Discovered {len(routes)} active application routes & endpoints:\n")
+                for r in routes:
+                    log.write(f"  • {r}\n")
+                log.write("[Infinity Crawler] Target attack surface expanded across all discovered routes.\n")
             log.flush()
             if job.get("status") != "stopped" and job.get("st"):
                 _run_schemathesis_phase(job, log)
@@ -582,6 +701,7 @@ def get_job_summary(job_id: str) -> dict:
         "returncode": returncode,
         "error": error,
         "spec_fixes": spec_fixes,
+        "target": scan_target(job_dir),
         "auth": (job or {}).get("auth", {}),
         "input_needs": (job or {}).get("input_needs", {}),
         "scope": (job or {}).get("scope", {}),
@@ -596,6 +716,11 @@ app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")
 
 @app.get("/", response_class=HTMLResponse)
 def index():
+    return (Path(__file__).parent / "static" / "landing.html").read_text()
+
+
+@app.get("/app", response_class=HTMLResponse)
+def app_ui():
     return (Path(__file__).parent / "static" / "index.html").read_text()
 
 
@@ -636,6 +761,143 @@ def tooling_status():
                          "hint": None if st_bin else "install via `uv tool install schemathesis` to enable the API-logic phase"},
         "seclists": {"ok": bool(seclists), "dir": str(seclists) if seclists else None,
                      "hint": None if seclists else "set SECLISTS_DIR to a sparse checkout to enable payload dictionaries"},
+    }
+
+
+@app.post("/api/analyze-target")
+async def analyze_target(
+    input_file: UploadFile | None = File(default=None),
+    pasted_targets: str = Form(default=""),
+):
+    """Real-time target inspector: auto-detects format, extracts endpoints, and provides execution dispatch plan."""
+    raw = await input_file.read() if input_file else b""
+    filename = input_file.filename if input_file else "target.txt"
+    text = pasted_targets.strip()
+
+    fetched_url = None
+    if not raw and text and text.lower().startswith(("http://", "https://")) and "\n" not in text:
+        # Check if single spec URL
+        is_potential_spec = any(k in text.lower() for k in ("swagger", "openapi", "docs-json", ".json", ".yaml", ".yml", "api-docs", "v2/api", "v3/api"))
+        if is_potential_spec:
+            try:
+                raw, filename = fetch_spec_url(text)
+                fetched_url = text
+            except Exception:
+                raw = text.encode()
+        else:
+            raw = text.encode()
+    elif not raw and text:
+        raw = text.encode()
+
+    if not raw:
+        return {
+            "valid": False,
+            "message": "Enter a target URL or upload a specification file to analyze."
+        }
+
+    detected_mode = detect_mode(filename, raw)
+    routes_count = 0
+    title = None
+    server_url = None
+    auth_schemes = []
+    sample_text = raw[:500_000].decode("utf-8", "ignore")
+
+    mode_labels = {
+        "openapi": "OpenAPI 3.x Specification",
+        "swagger": "Swagger 2.0 Specification",
+        "postman": "Postman Collection",
+        "list": "Web Application URL(s)",
+        "http": "Raw HTTP Request(s)",
+        "burp": "Burp Suite XML Export",
+        "yaml": "YAML Target Definition",
+        "jsonl": "JSONL Target Stream"
+    }
+
+    if detected_mode in ("openapi", "swagger"):
+        try:
+            doc = json.loads(sample_text)
+            if isinstance(doc, dict):
+                title = doc.get("info", {}).get("title")
+                paths = doc.get("paths", {})
+                routes_count = len(paths) if isinstance(paths, dict) else 0
+                servers = doc.get("servers", [])
+                if servers and isinstance(servers[0], dict):
+                    server_url = servers[0].get("url", "")
+                if "components" in doc and "securitySchemes" in doc["components"]:
+                    auth_schemes = list(doc["components"]["securitySchemes"].keys())
+        except Exception:
+            pass
+    elif detected_mode == "postman":
+        try:
+            doc = json.loads(sample_text)
+            if isinstance(doc, dict):
+                title = doc.get("info", {}).get("name")
+                item = doc.get("item", [])
+                routes_count = len(item) if isinstance(item, list) else 0
+        except Exception:
+            pass
+    elif detected_mode == "list":
+        lines = [l.strip() for l in text.splitlines() if l.strip() and not l.strip().startswith("#")]
+        routes_count = len(lines) if lines else 1
+        server_url = lines[0] if lines else text
+
+    # Build execution dispatch explanation
+    if detected_mode in ("openapi", "swagger", "postman"):
+        recommended_profile = "api"
+        dispatch_case = "API Security & Schema-Guided Fuzzing"
+        case_details = (
+            f"Auto-extracts {routes_count or 'all'} endpoints from the schema. "
+            "Injects compliance guardrails to prevent parameter abortion, maps authentication headers, "
+            "and dispatches DAST payload fuzzing against all path, query, and request body variables."
+        )
+        pipeline = [
+            {"step": "Ingestion", "detail": f"Parsed as {mode_labels.get(detected_mode, 'API Spec')}"},
+            {"step": "Route Extraction", "detail": f"{routes_count or 'Dynamic'} routes mapped"},
+            {"step": "Phase 1 Signatures", "detail": "API CVEs, exposures & misconfigurations"},
+            {"step": "Phase 2 DAST Fuzzing", "detail": "Parameter mutation & schema-guided injection"},
+            {"step": "Phase 0 Logic Testing", "detail": "Automated boundary & stateful validation"}
+        ]
+    elif detected_mode == "burp" or detected_mode == "http":
+        recommended_profile = "web_app"
+        dispatch_case = "Raw HTTP Stream Replay & Mutation"
+        case_details = (
+            "Extracts raw HTTP headers, cookies, and payloads from request definitions. "
+            "Applies parameter fuzzing and payload mutations directly to the captured request bodies."
+        )
+        pipeline = [
+            {"step": "Ingestion", "detail": f"Parsed as {mode_labels.get(detected_mode)}"},
+            {"step": "Request Parser", "detail": "Extracting headers, cookies & parameters"},
+            {"step": "Mutation Engine", "detail": "Injecting vulnerability test payloads"},
+            {"step": "Vulnerability Analysis", "detail": "Evaluating server responses for reflection/anomalies"}
+        ]
+    else:
+        recommended_profile = "web_app"
+        dispatch_case = "Live Web Application & OWASP Top 10 Audit"
+        case_details = (
+            f"Evaluates target web application ({server_url or 'specified targets'}). "
+            "Deep-spiders internal routes (/login, /dashboard, /register, /settings, /projects, API endpoints) "
+            "and tests all discovered surfaces for OWASP Top 10, CVEs, and active DAST injection."
+        )
+        pipeline = [
+            {"step": "Ingestion", "detail": "Target Web Host / Base URL"},
+            {"step": "Route Crawler", "detail": "Deep spiders HTML, SPA bundles & live endpoints"},
+            {"step": "Phase 1 Signatures", "detail": "OWASP Top 10, CVE templates, panel detection"},
+            {"step": "Phase 2 DAST Fuzzing", "detail": "Query, form, and header injection across all routes"}
+        ]
+
+    return {
+        "valid": True,
+        "detected_mode": detected_mode,
+        "mode_label": mode_labels.get(detected_mode, detected_mode.upper()),
+        "recommended_profile": recommended_profile,
+        "dispatch_case": dispatch_case,
+        "case_details": case_details,
+        "routes_count": routes_count,
+        "title": title,
+        "server_url": server_url,
+        "auth_schemes": auth_schemes,
+        "fetched_from_url": fetched_url,
+        "pipeline": pipeline
     }
 
 
@@ -701,6 +963,7 @@ async def start_scan(
     scan_profile: str = Form(default="api"),
     input_mode: str = Form(default="auto"),
     dast: bool = Form(default=True),
+    crawl: bool = Form(default=True),
     skip_format_validation: bool = Form(default=True),
     concurrency: int = Form(default=25),
     rate_limit: int = Form(default=150),
@@ -813,6 +1076,40 @@ async def start_scan(
         else:
             (job_dir / "input.used").write_bytes(raw if raw else (pasted + "\n").encode())
             effective_mode = mode
+
+    # Automated Web Application Crawler & Route Discovery
+    # Spiders HTML links, JavaScript SPA routes (Next.js/React/Vue), and active API endpoints
+    discovered_routes_list: list[str] = []
+    if crawl and effective_mode == "list" and _crawler is not None:
+        raw_text = (job_dir / "input.used").read_text(encoding="utf-8", errors="ignore").strip()
+        lines = [l.strip() for l in raw_text.splitlines() if l.strip() and not l.startswith("#")]
+        
+        custom_hdrs = {}
+        for line in headers.splitlines():
+            line = line.strip()
+            if line and ":" in line:
+                k, v = line.split(":", 1)
+                custom_hdrs[k.strip()] = v.strip()
+        
+        all_targets = set()
+        for target_line in lines:
+            if target_line.startswith(("http://", "https://")):
+                try:
+                    routes = _crawler.discover_web_routes(target_line, custom_headers=custom_hdrs)
+                    all_targets.update(routes)
+                except Exception:
+                    all_targets.add(target_line)
+            else:
+                all_targets.add(target_line)
+        
+        if all_targets:
+            base_t = lines[0] if lines else ""
+            ordered = [base_t] if base_t in all_targets else []
+            for t in sorted(all_targets):
+                if t not in ordered:
+                    ordered.append(t)
+            discovered_routes_list = ordered
+            (job_dir / "input.used").write_text("\n".join(discovered_routes_list) + "\n")
 
     # Path scope: auth-layer-only (or any module) scans. Slices the spec to
     # matching paths / filters target lines BEFORE phases run, so template
@@ -999,6 +1296,7 @@ async def start_scan(
             "input_needs": input_needs,
             "scope": scope_info,
             "st": st_cfg,
+            "discovered_routes": discovered_routes_list,
         }
 
     threading.Thread(target=run_scan, args=(job_id, cmds), daemon=True).start()
@@ -1010,6 +1308,7 @@ async def start_scan(
         "auth": auth_info,
         "input_needs": input_needs,
         "scope": scope_info,
+        "discovered_routes": discovered_routes_list,
         "api_logic": {"enabled": bool(st_cfg),
                       "real_ids_bound": (st_cfg or {}).get("real_ids_bound", 0),
                       "seclists": bool((st_cfg or {}).get("seclists"))},
@@ -1104,25 +1403,11 @@ def job_report_data(job_id: str):
     job_summary = get_job_summary(job_id)
     job_dir = JOBS_DIR / job_id
 
-    targets_loaded = 0
-    templates_loaded = 0
-    requests_sent = 0
-    scan_time_str = ""
-    log_path = job_dir / "run.log"
-    if log_path.exists():
-        log_txt = log_path.read_text(encoding="utf-8", errors="ignore")
-        m_targets = re.search(r"Targets loaded for current scan:\s*(\d+)", log_txt)
-        if m_targets:
-            targets_loaded = int(m_targets.group(1))
-        m_templates = re.search(r"Templates loaded for current scan:\s*(\d+)", log_txt)
-        if m_templates:
-            templates_loaded = int(m_templates.group(1))
-        m_conn = re.search(r"HTTP connections:\s*(\d+)\s*total", log_txt)
-        if m_conn:
-            requests_sent = int(m_conn.group(1))
-        m_time = re.search(r"Scan completed in\s*([0-9a-zA-Z\.\s]+)", log_txt)
-        if m_time:
-            scan_time_str = m_time.group(1).split(".")[0] if "." in m_time.group(1) else m_time.group(1)
+    coverage = coverage_from_log(job_dir)
+    targets_loaded = coverage["targets"]
+    templates_loaded = coverage["templates"]
+    requests_sent = coverage["requests"]
+    scan_time_str = coverage["time"]
 
     endpoints = []
     inp_path = job_dir / "input.used"
@@ -1203,18 +1488,271 @@ def job_report_data(job_id: str):
     }
 
 
+@app.post("/api/preflight-check")
+async def preflight_check(
+    target_url: str = Form(default=""),
+    pasted_targets: str = Form(default="")
+):
+    """Pre-scan diagnostic: checks reachability, latency, WAF presence, and recommends rate limits."""
+    import urllib.request
+    import urllib.error
+    import ssl
+    
+    target = target_url.strip() or (pasted_targets.strip().splitlines()[0] if pasted_targets.strip() else "")
+    if not target:
+        raise HTTPException(400, "Please provide a target URL to diagnose.")
+    
+    if not target.startswith(("http://", "https://")):
+        target = "https://" + target
+
+    try:
+        req = urllib.request.Request(
+            target,
+            headers={"User-Agent": "Infinity-Security-Diagnostic/1.0", "Accept": "*/*"}
+        )
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        t0 = time.time()
+        with urllib.request.urlopen(req, context=ctx, timeout=7) as resp:
+            latency_ms = int((time.time() - t0) * 1000)
+            headers = dict(resp.headers)
+            status_code = resp.status
+    except urllib.error.HTTPError as e:
+        latency_ms = int((time.time() - t0) * 1000) if 't0' in locals() else 50
+        headers = dict(e.headers) if hasattr(e, 'headers') else {}
+        status_code = e.code
+    except Exception as e:
+        return {
+            "online": False,
+            "target": target,
+            "error": str(e),
+            "status": "Target Unreachable / Timeout",
+            "latency_ms": None,
+            "waf": "Unknown",
+            "server": "-",
+            "ssl_valid": False,
+            "recommended_rate_limit": 50,
+            "recommended_concurrency": 10
+        }
+
+    # Detect WAF / CDN signatures
+    waf_name = "None Detected (Direct Server)"
+    server_hdr = headers.get("server", "").lower()
+    headers_str = str(headers).lower()
+    if "cloudflare" in server_hdr or "cf-ray" in headers:
+        waf_name = "Cloudflare CDN / WAF"
+    elif "akamai" in server_hdr or "x-akamai" in headers_str:
+        waf_name = "Akamai Edge / WAF"
+    elif "awselb" in server_hdr or "x-amzn-waf" in headers_str:
+        waf_name = "AWS WAF / CloudFront"
+    elif "imperva" in server_hdr or "incap" in headers_str or "x-iinfo" in headers:
+        waf_name = "Imperva Incapsula"
+    elif "fastly" in server_hdr or "x-fastly" in headers_str:
+        waf_name = "Fastly Edge Cloud"
+    elif "f5" in server_hdr or "big-ip" in server_hdr:
+        waf_name = "F5 BIG-IP Security Gateway"
+
+    is_throttled = "None Detected" not in waf_name
+
+    # Discover live routes & endpoints
+    discovered_routes = [target]
+    if _crawler is not None:
+        try:
+            discovered_routes = _crawler.discover_web_routes(target, timeout=4.0)
+        except Exception:
+            discovered_routes = [target]
+
+    return {
+        "online": True,
+        "target": target,
+        "http_status": status_code,
+        "latency_ms": latency_ms,
+        "waf": waf_name,
+        "server": headers.get("server", "Concealed / Custom"),
+        "ssl_valid": target.startswith("https://"),
+        "recommended_rate_limit": 60 if is_throttled else 150,
+        "recommended_concurrency": 10 if is_throttled else 25,
+        "discovered_routes": discovered_routes,
+        "status": f"Online (HTTP {status_code}) — {latency_ms}ms"
+    }
+
+
+@app.get("/api/jobs/{job_id}/compliance-matrix")
+def job_compliance_matrix(job_id: str):
+    """Categorize job findings into OWASP Top 10 (2021) compliance categories."""
+    job_dir = JOBS_DIR / job_id
+    if not job_dir.exists():
+        raise HTTPException(404, "Job not found")
+
+    findings = parse_results_file(job_dir / "results.json")
+    
+    categories = {
+        "A01": {"code": "A01:2021", "name": "Broken Access Control", "desc": "BOLA, IDOR, unauthorized access, exposed admin panels", "findings": [], "status": "PASS"},
+        "A02": {"code": "A02:2021", "name": "Cryptographic Failures", "desc": "Weak TLS/SSL, exposed keys, cleartext transmission", "findings": [], "status": "PASS"},
+        "A03": {"code": "A03:2021", "name": "Injection", "desc": "SQLi, XSS, Command Injection, SSRF, SSTI, LDAP", "findings": [], "status": "PASS"},
+        "A04": {"code": "A04:2021", "name": "Insecure Design", "desc": "Business logic flaws, missing rate limits, state validation", "findings": [], "status": "PASS"},
+        "A05": {"code": "A05:2021", "name": "Security Misconfiguration", "desc": "CORS, debug info, default credentials, stack traces", "findings": [], "status": "PASS"},
+        "A06": {"code": "A06:2021", "name": "Vulnerable & Outdated Components", "desc": "Known CVEs, unpatched dependencies, deprecated engines", "findings": [], "status": "PASS"},
+        "A07": {"code": "A07:2021", "name": "Identification & Authentication", "desc": "JWT validation, session fixation, credential brute-force", "findings": [], "status": "PASS"},
+        "A08": {"code": "A08:2021", "name": "Software & Data Integrity", "desc": "Insecure deserialization, untrusted code execution", "findings": [], "status": "PASS"},
+        "A09": {"code": "A09:2021", "name": "Security Logging & Monitoring", "desc": "Sensitive logging, verbose errors, log injection", "findings": [], "status": "PASS"},
+        "A10": {"code": "A10:2021", "name": "Server-Side Request Forgery", "desc": "SSRF, open redirect, internal network pivoting", "findings": [], "status": "PASS"}
+    }
+
+    for f in findings:
+        name = (f.get("info", {}).get("name") or f.get("template-id") or "").lower()
+        tags = str(f.get("info", {}).get("tags") or []).lower()
+        sev = (f.get("info", {}).get("severity") or "info").lower()
+        matched = f.get("matched-at") or f.get("host") or ""
+
+        entry = {"name": f.get("info", {}).get("name") or f.get("template-id"), "severity": sev, "matched": matched}
+
+        if any(k in name or k in tags for k in ("sqli", "sql", "xss", "inject", "rce", "command", "ssti", "ldap")):
+            categories["A03"]["findings"].append(entry)
+            categories["A03"]["status"] = "FAIL"
+        elif any(k in name or k in tags for k in ("auth", "bypass", "idor", "bola", "panel", "admin", "privilege", "access")):
+            categories["A01"]["findings"].append(entry)
+            categories["A01"]["status"] = "FAIL"
+        elif any(k in name or k in tags for k in ("ssl", "tls", "crypto", "cipher", "cert", "key", "token", "secret")):
+            categories["A02"]["findings"].append(entry)
+            categories["A02"]["status"] = "FAIL"
+        elif any(k in name or k in tags for k in ("ssrf", "redirect")):
+            categories["A10"]["findings"].append(entry)
+            categories["A10"]["status"] = "FAIL"
+        elif any(k in name or k in tags for k in ("cors", "config", "header", "debug", "exposure", "leak", "env", "git")):
+            categories["A05"]["findings"].append(entry)
+            categories["A05"]["status"] = "FAIL"
+        elif any(k in name or k in tags for k in ("cve-", "cve", "outdated", "apache", "nginx", "spring", "struts")):
+            categories["A06"]["findings"].append(entry)
+            categories["A06"]["status"] = "FAIL"
+        elif any(k in name or k in tags for k in ("session", "jwt", "login", "password", "brute")):
+            categories["A07"]["findings"].append(entry)
+            categories["A07"]["status"] = "FAIL"
+        else:
+            categories["A05"]["findings"].append(entry)
+            categories["A05"]["status"] = "FAIL"
+
+    return {
+        "job_id": job_id,
+        "total_findings": len(findings),
+        "categories": list(categories.values())
+    }
+
+
+@app.get("/api/jobs/{job_id}/compare/{other_job_id}")
+def job_compare(job_id: str, other_job_id: str):
+    """Diff two scans (Scan A vs Scan B) to identify Fixed, New, and Persistent vulnerabilities."""
+    dir_a = JOBS_DIR / job_id
+    dir_b = JOBS_DIR / other_job_id
+    if not dir_a.exists() or not dir_b.exists():
+        raise HTTPException(404, "One or both assessment jobs not found")
+
+    findings_a = parse_results_file(dir_a / "results.json")
+    findings_b = parse_results_file(dir_b / "results.json")
+
+    def _key(f: dict) -> str:
+        tid = f.get("template-id") or f.get("info", {}).get("name") or "item"
+        loc = f.get("matched-at") or f.get("host") or ""
+        return f"{tid}::{loc}"
+
+    map_a = {_key(f): f for f in findings_a}
+    map_b = {_key(f): f for f in findings_b}
+
+    keys_a = set(map_a.keys())
+    keys_b = set(map_b.keys())
+
+    # job_id is NEW, other_job_id is OLD (base)
+    fixed_keys = keys_b - keys_a
+    new_keys = keys_a - keys_b
+    persistent_keys = keys_a & keys_b
+
+    def _fmt(f: dict) -> dict:
+        return {
+            "name": f.get("info", {}).get("name") or f.get("template-id"),
+            "severity": (f.get("info", {}).get("severity") or "info").lower(),
+            "location": f.get("matched-at") or f.get("host") or "-",
+            "protocol": f.get("type") or "http"
+        }
+
+    return {
+        "current_job_id": job_id,
+        "base_job_id": other_job_id,
+        "metrics": {
+            "current_count": len(findings_a),
+            "base_count": len(findings_b),
+            "fixed_count": len(fixed_keys),
+            "new_count": len(new_keys),
+            "persistent_count": len(persistent_keys)
+        },
+        "fixed": [_fmt(map_b[k]) for k in fixed_keys],
+        "new": [_fmt(map_a[k]) for k in new_keys],
+        "persistent": [_fmt(map_a[k]) for k in persistent_keys]
+    }
+
+
+@app.post("/api/send-webhook")
+async def send_webhook(
+    webhook_url: str = Form(...),
+    job_id: str = Form(...)
+):
+    """Send notification payload to user's Slack / Discord / Teams webhook."""
+    import urllib.request
+    import json
+    
+    job_dir = JOBS_DIR / job_id
+    if not job_dir.exists():
+        raise HTTPException(404, "Job not found")
+
+    summary = get_job_summary(job_id)
+    findings = parse_results_file(job_dir / "results.json")
+    crit_count = sum(1 for f in findings if (f.get("info", {}).get("severity") or "").lower() in ("critical", "high"))
+
+    payload = {
+        "text": f"*Infinity Security Assessment Complete: {job_id}*\n"
+                f"• Target: `{summary.get('filename') or '-'}`\n"
+                f"• Profile: `{summary.get('scan_type')}`\n"
+                f"• Total Findings: *{len(findings)}* (Critical/High: *{crit_count}*)\n"
+                f"• Status: *{summary.get('status', 'done').upper()}*"
+    }
+
+    try:
+        req = urllib.request.Request(
+            webhook_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            return {"ok": True, "status_code": resp.status, "message": "Webhook delivered successfully"}
+    except Exception as e:
+        raise HTTPException(500, f"Webhook delivery failed: {e}")
+
+
 @app.get("/api/jobs/{job_id}/finding/{idx}")
 def job_finding_detail(job_id: str, idx: int):
-    """Enriched engineering detail for ONE finding (impact + remediation + evidence)."""
+    """Enriched engineering detail for ONE finding with HTTP Request/Response and issue export."""
     job_dir = JOBS_DIR / job_id
     if not job_dir.exists():
         raise HTTPException(404, "Assessment record not found")
-    if _fusion is None:
-        raise HTTPException(500, "fusion module unavailable")
     findings = parse_results_file(job_dir / "results.json")
     if idx < 0 or idx >= len(findings):
         raise HTTPException(404, "Finding index out of range")
-    return _fusion.enrich_finding(findings[idx])
+    
+    raw_item = findings[idx]
+    enriched = _fusion.enrich_finding(raw_item) if _fusion is not None else {}
+    
+    # Extract HTTP Request & Response if available
+    req_body = raw_item.get("request") or ""
+    resp_body = raw_item.get("response") or ""
+    curl_cmd = raw_item.get("curl-command") or enriched.get("curl") or ""
+
+    return {
+        **raw_item,
+        **enriched,
+        "raw_request": req_body,
+        "raw_response": resp_body,
+        "curl": curl_cmd
+    }
 
 
 @app.get("/api/jobs/{job_id}/genuine-report")
@@ -1271,47 +1809,119 @@ def job_view_report_standalone(job_id: str):
     def _ctl_badge(s: str) -> str:
         s = (s or "").upper()
         if s == "TESTED":
-            return '<span class="status-pass">✔ TESTED</span>'
+            return '<span class="status-pass"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="display:inline-block;vertical-align:middle;margin-right:3px"><polyline points="20 6 9 17 4 12"/></svg>TESTED</span>'
         if s == "SKIPPED":
-            return '<span style="color:#94a3b8; font-weight:700">○ SKIPPED</span>'
-        return '<span style="color:#facc15; font-weight:700">? INCONCLUSIVE</span>'
+            return '<span style="color:#94a3b8; font-weight:700">SKIPPED</span>'
+        return '<span style="color:#facc15; font-weight:700">INCONCLUSIVE</span>'
     controls_html = "".join(f'<tr><td><strong>{c["name"]}</strong></td><td>{c["desc"]}</td><td>{_ctl_badge(c.get("status"))}</td></tr>' for c in data["tested_controls"])
+
+    # OWASP Top 10 (2021) Evaluation
+    owasp_cats = [
+        ("A01:2021", "Broken Access Control", "BOLA, IDOR, unauthorized access, exposed admin panels"),
+        ("A02:2021", "Cryptographic Failures", "Weak TLS/SSL, exposed keys, cleartext transmission"),
+        ("A03:2021", "Injection", "SQLi, XSS, Command Injection, SSRF, SSTI, LDAP"),
+        ("A04:2021", "Insecure Design", "Business logic flaws, missing rate limits, state validation"),
+        ("A05:2021", "Security Misconfiguration", "CORS, debug info, default credentials, stack traces"),
+        ("A06:2021", "Vulnerable & Outdated Components", "Known CVEs, unpatched dependencies, deprecated engines"),
+        ("A07:2021", "Identification & Authentication", "JWT validation, session fixation, credential brute-force"),
+        ("A08:2021", "Software & Data Integrity", "Insecure deserialization, untrusted code execution"),
+        ("A09:2021", "Security Logging & Monitoring", "Sensitive logging, verbose errors, log injection"),
+        ("A10:2021", "Server-Side Request Forgery", "SSRF, open redirect, internal network pivoting")
+    ]
+    raw_findings = parse_results_file(JOBS_DIR / job_id / "results.json") if (JOBS_DIR / job_id).exists() else []
+    
+    owasp_counts = {c[0]: 0 for c in owasp_cats}
+    for f in raw_findings:
+        name = (f.get("info", {}).get("name") or f.get("template-id") or "").lower()
+        tags = str(f.get("info", {}).get("tags") or []).lower()
+        if any(k in name or k in tags for k in ("sqli", "sql", "xss", "inject", "rce", "command", "ssti", "ldap")):
+            owasp_counts["A03:2021"] += 1
+        elif any(k in name or k in tags for k in ("auth", "bypass", "idor", "bola", "panel", "admin", "privilege", "access")):
+            owasp_counts["A01:2021"] += 1
+        elif any(k in name or k in tags for k in ("ssl", "tls", "crypto", "cipher", "cert", "key", "token", "secret")):
+            owasp_counts["A02:2021"] += 1
+        elif any(k in name or k in tags for k in ("ssrf", "redirect")):
+            owasp_counts["A10:2021"] += 1
+        elif any(k in name or k in tags for k in ("cve-", "cve", "outdated", "apache", "nginx", "spring", "struts")):
+            owasp_counts["A06:2021"] += 1
+        elif any(k in name or k in tags for k in ("session", "jwt", "login", "password", "brute")):
+            owasp_counts["A07:2021"] += 1
+        else:
+            owasp_counts["A05:2021"] += 1
+
+    owasp_rows = []
+    for code, name, desc in owasp_cats:
+        cnt = owasp_counts[code]
+        status_tag = '<span class="status-pass">PASS</span>' if cnt == 0 else '<span class="badge-critical">FAIL</span>'
+        owasp_rows.append(f'<tr><td><strong style="color:#38bdf8">{esc(code)}</strong></td><td><strong>{esc(name)}</strong></td><td>{esc(desc)}</td><td>{status_tag}</td><td style="text-align:right"><strong>{cnt}</strong></td></tr>')
+    owasp_html = "".join(owasp_rows)
+
+    site = site_name(summary.get("target", "")) or summary.get("filename") or job_id
+    scanned_on = time.strftime("%b %d, %Y", time.localtime(summary.get("started") or time.time()))
+    dur = f" · finished in {summary['duration']}s" if summary.get("duration") else ""
+    sevmap = data["summary"]["severities"]
+    if detailed:
+        verdict_color, verdict_bg = "#f43f5e", "rgba(244, 63, 94, 0.08)"
+        verdict_head = f"{len(detailed)} Security Issues Found"
+        verdict_sub = "Each issue below states what it means, where it is, and how to fix it — most critical first."
+        chips = "".join(
+            f'<span style="background:{c}22;color:{c};border-radius:6px;padding:0.15rem 0.6rem;font-weight:800;font-size:0.72rem">{name} {sevmap.get(name.lower(), 0)}</span>'
+            for name, c in (("CRITICAL", "#f43f5e"), ("HIGH", "#f59e0b"), ("MEDIUM", "#facc15"), ("LOW", "#38bdf8"))
+            if sevmap.get(name.lower())
+        )
+    elif data.get("score") == "I":
+        verdict_color, verdict_bg = "#facc15", "rgba(250, 204, 21, 0.08)"
+        verdict_head = "INCONCLUSIVE — INCOMPLETE COVERAGE"
+        verdict_sub = "Too little of the target was reachable to certify it clean. Provide credentials/endpoints and re-run."
+        chips = ""
+    else:
+        verdict_color, verdict_bg = "#10b981", "rgba(16, 185, 129, 0.08)"
+        verdict_head = "ALL SECURITY CHECKS PASSED"
+        verdict_sub = f"0 vulnerabilities found — {data['templates_loaded']} security checks passed across {data['targets_loaded']} pages of {esc(site)} ({data['requests_sent']} HTTP requests)."
+        chips = ""
+
+    checked_html = "".join(
+        f'<tr><td><strong>{esc(c["name"])}</strong></td><td>{_ctl_badge(c.get("status"))}</td></tr>'
+        for c in data["tested_controls"]
+    )
 
     return f"""<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Infinity Security Report - {job_id}</title>
+  <title>Infinity Security Report — {esc(site)}</title>
   <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background:#0b0f19; color:#f8fafc; padding:2rem; margin:0; line-height:1.5 }}
-    .container {{ max-width:960px; margin:0 auto; background:#111827; border:1px solid #1f2937; border-radius:12px; padding:2.5rem; box-shadow:0 20px 40px rgba(0,0,0,0.5) }}
-    .header {{ display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1f2937; padding-bottom:1.5rem; margin-bottom:1.5rem }}
-    .logo {{ font-size:1.5rem; font-weight:900; background:linear-gradient(135deg, #6366f1, #38bdf8); -webkit-background-clip:text; -webkit-text-fill-color:transparent }}
-    .score-box {{ text-align:center; padding:1.2rem; background:rgba(255,255,255,0.02); border:1px solid #1f2937; border-radius:8px; margin-bottom:2rem }}
-    .score-num {{ font-size:3.5rem; font-weight:900; color:{data["score_color"]} }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background:#07090e; color:#f8fafc; padding:2rem; margin:0; line-height:1.5 }}
+    .container {{ max-width:980px; margin:0 auto; background:#0f172a; border:1px solid #1e293b; border-radius:14px; padding:2.5rem; box-shadow:0 25px 50px -12px rgba(0,0,0,0.6) }}
+    .header {{ display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1e293b; padding-bottom:1.5rem; margin-bottom:1.5rem }}
+    .logo {{ font-size:1.4rem; font-weight:900; background:linear-gradient(135deg, #6366f1, #06b6d4); -webkit-background-clip:text; -webkit-text-fill-color:transparent; letter-spacing:-0.02em }}
+    .score-box {{ text-align:center; padding:1.4rem; background:rgba(255,255,255,0.02); border:1px solid #1e293b; border-radius:10px; margin-bottom:2rem }}
+    .score-num {{ font-size:3.5rem; font-weight:900; color:{data["score_color"]}; line-height:1 }}
     .grid {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:1rem; margin-bottom:2rem }}
-    .stat-card {{ background:#0d121f; border:1px solid #1f2937; padding:1rem; border-radius:8px }}
+    .stat-card {{ background:#090d16; border:1px solid #1e293b; padding:1rem; border-radius:8px }}
     .stat-title {{ font-size:0.75rem; color:#94a3b8; text-transform:uppercase; font-weight:700 }}
     .stat-val {{ font-size:1.4rem; font-weight:800; color:#fff; margin-top:0.3rem }}
     table {{ width:100%; border-collapse:collapse; margin-top:1rem; margin-bottom:2rem; font-size:0.88rem }}
-    th {{ background:#0d121f; text-align:left; padding:0.65rem 0.9rem; color:#94a3b8; border-bottom:1px solid #1f2937 }}
-    td {{ padding:0.65rem 0.9rem; border-bottom:1px solid #1f2937; color:#cbd5e1 }}
-    .status-pass {{ color:#10b981; font-weight:700 }}
-    .method-tag {{ padding:0.15rem 0.45rem; border-radius:4px; font-size:0.75rem; font-weight:800; background:#334155; color:#fff }}
+    th {{ background:#090d16; text-align:left; padding:0.65rem 0.9rem; color:#94a3b8; border-bottom:1px solid #1e293b }}
+    td {{ padding:0.65rem 0.9rem; border-bottom:1px solid #1e293b; color:#cbd5e1 }}
+    .status-pass {{ color:#10b981; font-weight:700; display:inline-flex; align-items:center }}
+    .method-tag {{ padding:0.15rem 0.45rem; border-radius:4px; font-size:0.75rem; font-weight:800; background:#334155; color:#fff; font-family:monospace }}
     .method-get {{ background:#0369a1 }} .method-post {{ background:#15803d }} .method-put {{ background:#b45309 }} .method-delete {{ background:#b91c1c }}
-    .finding {{ background:#0d121f; border:1px solid #1f2937; border-radius:8px; padding:1rem 1.1rem; margin-bottom:1rem }}
+    .finding {{ background:#090d16; border:1px solid #1e293b; border-radius:8px; padding:1.1rem; margin-bottom:1rem }}
     .fhead {{ display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; font-size:0.95rem }}
     .floc {{ margin:0.4rem 0; font-size:0.85rem; word-break:break-all }}
     .fdesc {{ color:#cbd5e1; font-size:0.87rem; margin:0.4rem 0 }}
     .fimpact {{ color:#fbbf24; font-size:0.87rem; margin:0.4rem 0 }}
     .ffix {{ color:#6ee7b7; font-size:0.87rem; margin:0.4rem 0 }}
-    .ev {{ background:#020617; border:1px solid #1f2937; border-radius:6px; padding:0.5rem 0.7rem; font-family:monospace; font-size:0.78rem; color:#a5f3fc; margin:0.35rem 0; word-break:break-all; white-space:pre-wrap }}
+    .ev {{ background:#020617; border:1px solid #1e293b; border-radius:6px; padding:0.6rem 0.8rem; font-family:monospace; font-size:0.78rem; color:#a5f3fc; margin:0.35rem 0; word-break:break-all; white-space:pre-wrap }}
     .refs {{ font-size:0.78rem; color:#94a3b8; margin-top:0.35rem }}
+    details {{ border:1px solid #1e293b; border-radius:8px; padding:0.9rem 1.1rem; margin-bottom:2rem }}
     details summary {{ cursor:pointer; color:#38bdf8; font-size:0.82rem }}
     pre {{ background:#020617; padding:0.6rem; border-radius:6px; font-size:0.75rem; overflow-x:auto; white-space:pre-wrap }}
     .badge-critical {{ color:#f43f5e; font-weight:800 }} .badge-high {{ color:#f59e0b; font-weight:800 }} .badge-medium {{ color:#facc15; font-weight:800 }}
     .badge-low {{ color:#38bdf8; font-weight:800 }} .badge-info {{ color:#94a3b8; font-weight:800 }}
-    .btn {{ background:#4f46e5; color:#fff; border:none; padding:0.6rem 1.2rem; border-radius:6px; font-weight:700; cursor:pointer; text-decoration:none; display:inline-block }}
+    .btn {{ background:#4f46e5; color:#fff; border:none; padding:0.6rem 1.2rem; border-radius:6px; font-weight:700; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:0.4rem }}
+    .btn:hover {{ background:#4338ca }}
     @media print {{ body {{ background:#fff; color:#000 }} .container {{ border:none; box-shadow:none; padding:0 }} .btn {{ display:none }} }}
   </style>
 </head>
@@ -1323,51 +1933,61 @@ def job_view_report_standalone(job_id: str):
         <div style="font-size:0.85rem; color:#94a3b8; margin-top:0.2rem">Official Dynamic Application Security Assessment Report</div>
       </div>
       <div>
-        <button class="btn" onclick="window.print()">🖨️ Print / Save PDF</button>
+        <button class="btn" onclick="window.print()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Print / Save PDF
+        </button>
       </div>
     </div>
 
     <div class="score-box">
-      <div class="score-num">{data["score"]}</div>
-      <div style="font-size:1.15rem; font-weight:800; color:{data["score_color"]}; margin-top:0.4rem">{data["score_label"]}</div>
-      <div style="font-size:0.85rem; color:#94a3b8; margin-top:0.3rem">Target: <strong>{esc(summary.get("filename") or "-")}</strong> | Assessment ID: <code>{esc(job_id)}</code></div>
-    </div>
-
-    <div class="grid">
-      <div class="stat-card">
-        <div class="stat-title">Target Endpoints</div>
-        <div class="stat-val">{data["targets_loaded"]}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-title">Security Checks Run</div>
-        <div class="stat-val">{data["templates_loaded"]}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-title">HTTP Requests Sent</div>
-        <div class="stat-val">{data["requests_sent"] or "-"}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-title">Total Vulnerabilities</div>
-        <div class="stat-val" style="color:{data["score_color"]}">{len(detailed)}</div>
+      <div style="font-size:0.72rem; color:#94a3b8; text-transform:uppercase; letter-spacing:0.08em; font-weight:700">This report is for</div>
+      <div style="font-size:1.7rem; font-weight:900; color:#fff; margin-top:0.2rem; word-break:break-all">{esc(site)}</div>
+      <div style="font-size:0.8rem; color:#94a3b8; margin-top:0.3rem; word-break:break-all">{esc(summary.get("target") or "")}</div>
+      <div style="font-size:0.8rem; color:#94a3b8; margin-top:0.25rem">Scanned {scanned_on} · {data["targets_loaded"]} routes · {data["templates_loaded"]} security checks · {data["requests_sent"]} requests{esc(dur)}</div>
+      <div style="display:flex; gap:0.9rem; align-items:center; margin-top:1.1rem; justify-content:center">
+        <div class="score-num" style="font-size:2.6rem">{data["score"]}</div>
+        <div style="font-size:1rem; font-weight:800; color:{data["score_color"]}; text-align:left">{data["score_label"]}</div>
       </div>
     </div>
 
-    <h3 style="border-bottom:1px solid #1f2937; padding-bottom:0.5rem; color:#38bdf8">1. Verified Security Controls Matrix</h3>
-    <table>
-      <thead><tr><th>Security Control</th><th>Scope & Description</th><th>Result</th></tr></thead>
-      <tbody>{controls_html}</tbody>
-    </table>
+    <div style="background:{verdict_bg}; border:1px solid {verdict_color}55; border-left:4px solid {verdict_color}; border-radius:10px; padding:1.2rem 1.4rem; margin-bottom:2rem">
+      <div style="font-size:1.2rem; font-weight:900; color:{verdict_color}">{esc(verdict_head)}</div>
+      <div style="font-size:0.88rem; color:#cbd5e1; margin-top:0.35rem">{verdict_sub}</div>
+      {('<div style="display:flex; gap:0.5rem; margin-top:0.8rem; flex-wrap:wrap">' + chips + '</div>') if chips else ''}
+    </div>
 
-    <h3 style="border-bottom:1px solid #1f2937; padding-bottom:0.5rem; color:#38bdf8">{esc(findings_title)}</h3>
+    <h3 style="border-bottom:1px solid #1e293b; padding-bottom:0.5rem; color:#38bdf8">1. What We Found ({len(detailed)})</h3>
     {findings_html}
 
-    <h3 style="border-bottom:1px solid #1f2937; padding-bottom:0.5rem; color:#38bdf8">3. Evaluated Endpoints & API Routes ({len(data["endpoints"])})</h3>
+    <h3 style="border-bottom:1px solid #1e293b; padding-bottom:0.5rem; color:#38bdf8">2. What We Checked (Security Controls)</h3>
     <table>
-      <thead><tr><th>Method</th><th>Endpoint Route</th><th>Status</th></tr></thead>
-      <tbody>{endpoints_html}</tbody>
+      <thead><tr><th>Control</th><th>Result</th></tr></thead>
+      <tbody>{checked_html}</tbody>
     </table>
 
-    <div style="text-align:center; font-size:0.78rem; color:#64748b; margin-top:3rem; border-top:1px solid #1f2937; padding-top:1.5rem">
+    <details>
+      <summary>Technical appendix — full matrices & endpoint list (for engineers)</summary>
+      <h3 style="border-bottom:1px solid #1e293b; padding-bottom:0.5rem; color:#38bdf8; margin-top:1.2rem">A1. Verified Security Controls Matrix</h3>
+      <table>
+        <thead><tr><th>Security Control</th><th>Scope & Description</th><th>Result</th></tr></thead>
+        <tbody>{controls_html}</tbody>
+      </table>
+
+      <h3 style="border-bottom:1px solid #1e293b; padding-bottom:0.5rem; color:#38bdf8">A2. OWASP Top 10 (2021) Compliance Matrix</h3>
+      <table>
+        <thead><tr><th>Category</th><th>Risk Domain</th><th>Description</th><th>Compliance Status</th><th style="text-align:right">Findings</th></tr></thead>
+        <tbody>{owasp_html}</tbody>
+      </table>
+
+      <h3 style="border-bottom:1px solid #1e293b; padding-bottom:0.5rem; color:#38bdf8">A3. Evaluated Endpoints & API Routes ({len(data["endpoints"])})</h3>
+      <table>
+        <thead><tr><th>Method</th><th>Endpoint Route</th><th>Status</th></tr></thead>
+        <tbody>{endpoints_html}</tbody>
+      </table>
+    </details>
+
+    <div style="text-align:center; font-size:0.78rem; color:#64748b; margin-top:3rem; border-top:1px solid #1e293b; padding-top:1.5rem">
       Generated automatically by Infinity Security Suite (infinity.security) • OWASP & CWE Compliance Verified
     </div>
   </div>

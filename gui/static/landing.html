@@ -1,0 +1,1725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>INFINITY // Autonomous Cyber Defense & Vulnerability Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-void: #02050c;
+    --bg-surface: rgba(8, 14, 26, 0.82);
+    --bg-surface-elevated: rgba(14, 22, 38, 0.9);
+    --bg-card: rgba(11, 18, 32, 0.76);
+    --border-cyber: rgba(6, 182, 212, 0.28);
+    --border-cyber-bright: rgba(0, 240, 255, 0.7);
+    --cyan: #00f0ff;
+    --cyan-dim: #06b6d4;
+    --violet: #8b5cf6;
+    --violet-glow: rgba(139, 92, 246, 0.35);
+    --emerald: #10b981;
+    --emerald-glow: rgba(16, 185, 129, 0.35);
+    --amber: #f59e0b;
+    --rose: #f43f5e;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --grad-cyber: linear-gradient(135deg, #00f0ff 0%, #6366f1 50%, #c084fc 100%);
+    --font-cyber: 'Chakra Petch', -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-body: 'Inter', -apple-system, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  html, body {
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+    background: var(--bg-void);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+
+  /* Cyber Scanline CRT Overlay */
+  .scanlines {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 99;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+                linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+    background-size: 100% 3px, 6px 100%;
+    opacity: 0.6;
+  }
+
+  /* Animated Dual Canvas Background */
+  #cyber-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.85;
+  }
+
+  /* Vignette & Radial Atmosphere */
+  .vignette {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: 
+      radial-gradient(circle at 18% 28%, rgba(6, 182, 212, 0.12), transparent 48%),
+      radial-gradient(circle at 82% 72%, rgba(139, 92, 246, 0.14), transparent 52%),
+      radial-gradient(circle at 50% 50%, transparent 58%, rgba(2, 5, 12, 0.85) 100%);
+  }
+
+  /* Main Viewport Container (Strictly 100vh / Zero Scroll) */
+  .viewport-frame {
+    position: relative;
+    z-index: 10;
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+  }
+
+  /* ================= NAV BAR ================= */
+  .cyber-nav {
+    flex-shrink: 0;
+    height: clamp(50px, 6.5vh, 62px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 clamp(1.2rem, 3vw, 2.8rem);
+    background: rgba(4, 8, 18, 0.85);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(6, 182, 212, 0.22);
+    position: relative;
+  }
+  .cyber-nav::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 20%;
+    width: 60%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan), var(--violet), transparent);
+    box-shadow: 0 0 12px var(--cyan);
+  }
+
+  .nav-left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .brand-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    text-decoration: none;
+  }
+  .brand-glyph {
+    width: 32px;
+    height: 32px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .brand-glyph svg {
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.65));
+    animation: glyphSpin 22s linear infinite;
+  }
+  @keyframes glyphSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .brand-text h1 {
+    font-family: var(--font-cyber);
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    background: var(--grad-cyber);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    line-height: 1;
+  }
+  .brand-text span {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    font-weight: 600;
+    letter-spacing: 0.28em;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .nav-center-telemetry {
+    display: flex;
+    align-items: center;
+    gap: clamp(1rem, 2vw, 2.2rem);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+  }
+  .telemetry-node {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--text-secondary);
+  }
+  .telemetry-node .label {
+    color: var(--text-muted);
+  }
+  .telemetry-node .val {
+    color: var(--cyan);
+    font-weight: 600;
+  }
+  .telemetry-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--emerald);
+    box-shadow: 0 0 10px var(--emerald);
+    animation: neonBlink 1.8s ease-in-out infinite;
+  }
+  @keyframes neonBlink {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.35; transform: scale(0.85); }
+  }
+
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+  }
+  .audio-toggle {
+    background: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.25);
+    color: var(--text-secondary);
+    padding: 0.35rem 0.65rem;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .audio-toggle:hover {
+    border-color: var(--cyan);
+    color: var(--cyan);
+    background: rgba(6, 182, 212, 0.16);
+  }
+  .nav-launch-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.25), rgba(99, 102, 241, 0.3));
+    border: 1px solid var(--cyan);
+    color: #fff;
+    padding: 0.42rem 1.1rem;
+    font-family: var(--font-cyber);
+    font-weight: 700;
+    font-size: 0.82rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-decoration: none;
+    border-radius: 4px;
+    box-shadow: 0 0 18px rgba(0, 240, 255, 0.28);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .nav-launch-btn:hover {
+    background: linear-gradient(135deg, rgba(0, 240, 255, 0.4), rgba(99, 102, 241, 0.5));
+    box-shadow: 0 0 28px rgba(0, 240, 255, 0.6);
+    transform: translateY(-1px);
+    border-color: #fff;
+  }
+
+  /* ================= MAIN CONTENT GRID (NO SCROLL) ================= */
+  .cyber-main {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr 1.25fr;
+    gap: clamp(1rem, 2.5vw, 2.6rem);
+    padding: clamp(0.5rem, 1.2vh, 1.1rem) clamp(1.2rem, 3.2vw, 3rem);
+    align-items: stretch;
+    overflow: hidden;
+  }
+
+  /* LEFT HERO COLUMN */
+  .hero-column {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 0;
+    overflow: hidden;
+    padding-right: 0.4rem;
+  }
+
+  .hero-kicker-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: clamp(0.35rem, 0.8vh, 0.7rem);
+  }
+  .cyber-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: rgba(0, 240, 255, 0.06);
+    border: 1px solid rgba(0, 240, 255, 0.35);
+    padding: 0.24rem 0.62rem;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: clamp(0.6rem, 0.8vw, 0.7rem);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--cyan);
+    text-transform: uppercase;
+  }
+  .pulse-node {
+    width: 6px;
+    height: 6px;
+    background: var(--cyan);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--cyan);
+    animation: neonBlink 1.5s infinite;
+  }
+
+  .engine-tag {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    border-left: 1px solid rgba(100, 116, 139, 0.4);
+    padding-left: 0.6rem;
+  }
+
+  .hero-title {
+    font-family: var(--font-cyber);
+    font-weight: 800;
+    font-size: clamp(1.8rem, 3.8vh, 2.85rem);
+    line-height: 1.06;
+    letter-spacing: -0.02em;
+    margin-bottom: clamp(0.45rem, 1vh, 0.85rem);
+    text-transform: uppercase;
+  }
+  .hero-title .glow-word {
+    background: var(--grad-cyber);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 20px rgba(0, 240, 255, 0.35));
+    display: inline-block;
+  }
+  .hero-title .sub-line {
+    display: block;
+    color: #fff;
+    font-size: 0.88em;
+  }
+
+  .hero-desc {
+    color: var(--text-secondary);
+    font-size: clamp(0.78rem, 1.3vh, 0.92rem);
+    line-height: 1.45;
+    margin-bottom: clamp(0.6rem, 1.4vh, 1.1rem);
+    max-width: 96%;
+  }
+  .hero-desc strong {
+    color: #fff;
+    font-weight: 600;
+  }
+
+  /* Inline Quick Target Launcher */
+  .quick-target-box {
+    background: rgba(8, 14, 26, 0.75);
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    border-radius: 6px;
+    padding: clamp(0.35rem, 0.8vh, 0.55rem);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: clamp(0.6rem, 1.3vh, 1rem);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  }
+  .target-prefix {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--cyan);
+    padding-left: 0.4rem;
+    font-weight: 700;
+  }
+  .target-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: clamp(0.74rem, 1.1vh, 0.84rem);
+  }
+  .target-input::placeholder {
+    color: var(--text-muted);
+  }
+  .target-go-btn {
+    background: linear-gradient(135deg, #06b6d4, #6366f1);
+    color: #fff;
+    border: none;
+    outline: none;
+    padding: clamp(0.42rem, 0.9vh, 0.55rem) clamp(0.8rem, 1.4vw, 1.2rem);
+    border-radius: 4px;
+    font-family: var(--font-cyber);
+    font-weight: 700;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    text-transform: uppercase;
+    box-shadow: 0 0 16px rgba(6, 182, 212, 0.4);
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .target-go-btn:hover {
+    box-shadow: 0 0 24px rgba(0, 240, 255, 0.65);
+    transform: translateY(-1px);
+  }
+
+  /* Preset Target Chips */
+  .preset-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: clamp(0.6rem, 1.4vh, 1.1rem);
+    flex-wrap: wrap;
+  }
+  .preset-label {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+  .preset-chip {
+    background: rgba(6, 182, 212, 0.07);
+    border: 1px solid rgba(6, 182, 212, 0.25);
+    color: #a5f3fc;
+    font-family: var(--font-mono);
+    font-size: clamp(0.58rem, 0.8vh, 0.66rem);
+    padding: 0.15rem 0.45rem;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .preset-chip:hover {
+    background: rgba(6, 182, 212, 0.2);
+    border-color: var(--cyan);
+    color: #fff;
+    transform: translateY(-1px);
+  }
+
+  /* 4 Mini Stat Telemetry Grid (Clickable to switch tabs) */
+  .telemetry-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: clamp(0.45rem, 0.9vw, 0.75rem);
+    margin-top: auto;
+  }
+  .stat-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    border-radius: 6px;
+    padding: clamp(0.45rem, 1vh, 0.75rem) clamp(0.4rem, 0.7vw, 0.65rem);
+    position: relative;
+    overflow: hidden;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 3px;
+    height: 100%;
+    background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan);
+    opacity: 0.7;
+  }
+  .stat-card:hover {
+    border-color: var(--cyan);
+    transform: translateY(-2px);
+    box-shadow: 0 0 16px rgba(6, 182, 212, 0.25);
+    background: rgba(14, 25, 45, 0.85);
+  }
+  .stat-val {
+    font-family: var(--font-cyber);
+    font-size: clamp(1.05rem, 2vh, 1.35rem);
+    font-weight: 800;
+    color: #fff;
+    line-height: 1;
+    margin-bottom: 2px;
+  }
+  .stat-val.accent {
+    color: var(--cyan);
+  }
+  .stat-label {
+    font-family: var(--font-mono);
+    font-size: clamp(0.55rem, 0.8vh, 0.64rem);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    line-height: 1.2;
+  }
+
+  /* RIGHT CYBER DECK (INTERACTIVE PRODUCT INFORMATION) */
+  .cyber-deck-column {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    gap: clamp(0.5rem, 1vh, 0.9rem);
+  }
+
+  /* Deck HUD Wrapper */
+  .hud-console {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-surface);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(6, 182, 212, 0.32);
+    border-radius: 8px;
+    position: relative;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 0 24px rgba(6, 182, 212, 0.04);
+    overflow: hidden;
+  }
+
+  /* Corner brackets */
+  .hud-corner {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-color: var(--cyan);
+    pointer-events: none;
+    z-index: 5;
+  }
+  .hud-tl { top: -1px; left: -1px; border-top: 2px solid var(--cyan); border-left: 2px solid var(--cyan); }
+  .hud-tr { top: -1px; right: -1px; border-top: 2px solid var(--cyan); border-right: 2px solid var(--cyan); }
+  .hud-bl { bottom: -1px; left: -1px; border-bottom: 2px solid var(--cyan); border-left: 2px solid var(--cyan); }
+  .hud-br { bottom: -1px; right: -1px; border-bottom: 2px solid var(--cyan); border-right: 2px solid var(--cyan); }
+
+  /* Deck Tab Header */
+  .deck-nav-bar {
+    display: flex;
+    align-items: center;
+    background: rgba(4, 9, 20, 0.88);
+    border-bottom: 1px solid rgba(6, 182, 212, 0.22);
+    padding: 0.25rem 0.4rem;
+    gap: 0.3rem;
+    flex-shrink: 0;
+  }
+  .deck-tab-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+    padding: clamp(0.38rem, 0.85vh, 0.52rem) 0.5rem;
+    border-radius: 4px;
+    font-family: var(--font-cyber);
+    font-weight: 700;
+    font-size: clamp(0.68rem, 1vh, 0.78rem);
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.18s;
+    white-space: nowrap;
+    text-transform: uppercase;
+    position: relative;
+  }
+  .deck-tab-btn .tab-num {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+  }
+  .deck-tab-btn:hover {
+    color: #fff;
+    background: rgba(6, 182, 212, 0.08);
+  }
+  .deck-tab-btn.active {
+    background: rgba(6, 182, 212, 0.16);
+    border-color: rgba(6, 182, 212, 0.45);
+    color: var(--cyan);
+    box-shadow: 0 0 14px rgba(6, 182, 212, 0.2);
+  }
+  .deck-tab-btn.active .tab-num {
+    color: var(--cyan);
+  }
+  .deck-tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -0.3rem;
+    left: 20%;
+    width: 60%;
+    height: 2px;
+    background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan);
+  }
+
+  /* Deck Tab Content Area */
+  .deck-body {
+    flex: 1;
+    min-height: 0;
+    padding: clamp(0.6rem, 1.3vh, 1.1rem);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+  }
+
+  .deck-panel {
+    display: none;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
+    animation: fadeInPanel 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  .deck-panel.active {
+    display: flex;
+  }
+  @keyframes fadeInPanel {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Panel Header */
+  .panel-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: clamp(0.4rem, 0.8vh, 0.7rem);
+    border-bottom: 1px dashed rgba(6, 182, 212, 0.2);
+    padding-bottom: clamp(0.3rem, 0.6vh, 0.5rem);
+    flex-shrink: 0;
+  }
+  .panel-tagline {
+    font-family: var(--font-cyber);
+    font-size: clamp(0.76rem, 1.1vh, 0.9rem);
+    font-weight: 700;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .panel-tagline .pill {
+    background: rgba(139, 92, 246, 0.2);
+    border: 1px solid rgba(139, 92, 246, 0.45);
+    color: #c4b5fd;
+    font-size: 0.6rem;
+    padding: 0.12rem 0.45rem;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+  }
+  .panel-status {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--emerald);
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  /* Card Grid for Features */
+  .panel-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: clamp(0.45rem, 0.85vh, 0.75rem);
+    flex: 1;
+    min-height: 0;
+  }
+  .feature-hud-card {
+    background: rgba(13, 20, 36, 0.65);
+    border: 1px solid rgba(6, 182, 212, 0.18);
+    border-radius: 6px;
+    padding: clamp(0.45rem, 0.95vh, 0.75rem);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .feature-hud-card:hover {
+    border-color: rgba(6, 182, 212, 0.55);
+    background: rgba(18, 28, 50, 0.75);
+    transform: translateY(-1px);
+    box-shadow: 0 0 16px rgba(6, 182, 212, 0.18);
+  }
+  .fcard-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.3rem;
+  }
+  .fcard-title {
+    font-family: var(--font-cyber);
+    font-size: clamp(0.72rem, 1.05vh, 0.85rem);
+    font-weight: 700;
+    color: var(--cyan);
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .fcard-title svg {
+    width: 14px;
+    height: 14px;
+    stroke: var(--cyan);
+    flex-shrink: 0;
+  }
+  .fcard-code {
+    font-family: var(--font-mono);
+    font-size: 0.56rem;
+    color: var(--text-muted);
+    background: rgba(0, 0, 0, 0.45);
+    padding: 0.08rem 0.35rem;
+    border-radius: 3px;
+  }
+  .fcard-desc {
+    color: var(--text-secondary);
+    font-size: clamp(0.65rem, 0.9vh, 0.74rem);
+    line-height: 1.36;
+    margin-bottom: auto;
+  }
+  .fcard-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.28rem;
+    margin-top: 0.4rem;
+  }
+  .fcard-chip {
+    font-family: var(--font-mono);
+    font-size: clamp(0.53rem, 0.72vh, 0.61rem);
+    font-weight: 600;
+    padding: 0.1rem 0.36rem;
+    border-radius: 3px;
+    background: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    color: #a5f3fc;
+  }
+
+  /* LOWER HUD: LIVE RADAR & TELEMETRY STREAM CONSOLE */
+  .telemetry-radar-console {
+    height: clamp(80px, 13.5vh, 110px);
+    flex-shrink: 0;
+    background: rgba(4, 9, 20, 0.88);
+    border: 1px solid rgba(6, 182, 212, 0.28);
+    border-radius: 8px;
+    display: grid;
+    grid-template-columns: 115px 1fr;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  }
+  
+  /* Radar View */
+  .radar-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-right: 1px solid rgba(6, 182, 212, 0.2);
+    position: relative;
+    background: radial-gradient(circle, rgba(6, 182, 212, 0.12) 0%, transparent 75%);
+    padding: 0.35rem;
+  }
+  .radar-screen {
+    width: clamp(48px, 8vh, 62px);
+    height: clamp(48px, 8vh, 62px);
+    border-radius: 50%;
+    border: 1px solid rgba(6, 182, 212, 0.4);
+    position: relative;
+    overflow: hidden;
+    background: rgba(2, 6, 14, 0.85);
+    box-shadow: 0 0 14px rgba(6, 182, 212, 0.25);
+  }
+  .radar-ring {
+    position: absolute;
+    inset: 10px;
+    border-radius: 50%;
+    border: 1px dashed rgba(6, 182, 212, 0.3);
+  }
+  .radar-sweep {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, rgba(0, 240, 255, 0.4) 0deg, transparent 65deg, transparent 360deg);
+    animation: radarSpin 3.5s linear infinite;
+  }
+  @keyframes radarSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .radar-blip {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--emerald);
+    box-shadow: 0 0 6px var(--emerald);
+    animation: blipGlow 2.5s infinite;
+  }
+  .radar-blip.b1 { top: 24%; left: 65%; animation-delay: 0.4s; }
+  .radar-blip.b2 { top: 62%; left: 32%; animation-delay: 1.2s; background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+  @keyframes blipGlow {
+    0%, 100% { opacity: 0.2; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1.3); }
+  }
+  .radar-label {
+    font-family: var(--font-mono);
+    font-size: 0.56rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--cyan);
+    margin-top: 3px;
+  }
+
+  /* Telemetry Live Feed Terminal */
+  .telemetry-terminal {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: clamp(0.3rem, 0.6vh, 0.5rem) 0.8rem;
+    overflow: hidden;
+    font-family: var(--font-mono);
+  }
+  .term-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    border-bottom: 1px solid rgba(6, 182, 212, 0.15);
+    padding-bottom: 2px;
+  }
+  .term-header .title {
+    color: var(--cyan);
+    font-weight: 700;
+  }
+  .term-logs {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+    margin: 2px 0;
+  }
+  .log-row {
+    font-size: clamp(0.58rem, 0.8vh, 0.67rem);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    animation: logSlide 0.2s ease-out;
+  }
+  @keyframes logSlide {
+    from { opacity: 0; transform: translateX(-4px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  .log-time { color: var(--text-muted); font-size: 0.56rem; }
+  .log-tag {
+    font-size: 0.53rem;
+    font-weight: 700;
+    padding: 0.05rem 0.28rem;
+    border-radius: 2px;
+  }
+  .tag-ok { background: rgba(16, 185, 129, 0.18); color: #34d399; }
+  .tag-warn { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
+  .tag-cyan { background: rgba(6, 182, 212, 0.18); color: #22d3ee; }
+  .log-msg { color: var(--text-secondary); }
+  .log-msg .highlight { color: #fff; font-weight: 600; }
+
+  /* ================= FOOTER TELEMETRY STRIP ================= */
+  .cyber-footer {
+    flex-shrink: 0;
+    height: clamp(32px, 4.2vh, 40px);
+    background: rgba(2, 5, 14, 0.96);
+    border-top: 1px solid rgba(6, 182, 212, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 clamp(1.2rem, 3vw, 2.8rem);
+    font-family: var(--font-mono);
+    font-size: clamp(0.58rem, 0.78vh, 0.68rem);
+    color: var(--text-muted);
+  }
+  .footer-left {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+  }
+  .footer-left span {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .footer-left .strong {
+    color: var(--text-secondary);
+  }
+  .footer-right {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+  }
+  .footer-right a {
+    color: var(--cyan);
+    text-decoration: none;
+    transition: color 0.15s;
+    font-weight: 600;
+  }
+  .footer-right a:hover {
+    color: #fff;
+    text-shadow: 0 0 8px var(--cyan);
+  }
+
+  /* Responsive safeguards for compact viewports */
+  @media (max-width: 1024px) {
+    .cyber-main {
+      grid-template-columns: 1fr;
+      overflow-y: hidden;
+    }
+    .hero-desc {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .panel-cards-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  @media (max-height: 720px) {
+    .hero-title { font-size: 1.85rem; }
+    .hero-desc { font-size: 0.76rem; line-height: 1.3; }
+    .telemetry-radar-console { height: 75px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Scanline Retro CRT Layer -->
+<div class="scanlines"></div>
+
+<!-- Background Canvas with Cyber Grid & Data Stream -->
+<canvas id="cyber-canvas"></canvas>
+
+<!-- Vignette Glow Masks -->
+<div class="vignette"></div>
+
+<!-- Single Viewport Container (Zero Scroll) -->
+<div class="viewport-frame">
+
+  <!-- ================= TOP HUD NAV ================= -->
+  <header class="cyber-nav">
+    <div class="nav-left">
+      <a href="/" class="brand-logo">
+        <div class="brand-glyph">
+          <svg viewBox="0 0 100 100" fill="none">
+            <polygon points="50,5 90,28 90,72 50,95 10,72 10,28" stroke="#00f0ff" stroke-width="6" stroke-linejoin="round"/>
+            <polygon points="50,22 75,37 75,63 50,78 25,63 25,37" stroke="#8b5cf6" stroke-width="4" stroke-linejoin="round" opacity="0.8"/>
+            <circle cx="50" cy="50" r="10" fill="#00f0ff"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>INFINITY</h1>
+          <span>SECURITY PLATFORM</span>
+        </div>
+      </a>
+    </div>
+
+    <!-- Live Telemetry Readouts -->
+    <div class="nav-center-telemetry">
+      <div class="telemetry-node">
+        <div class="telemetry-dot"></div>
+        <span class="label">CORE ENGINE:</span>
+        <span class="val">v3.11.1 ONLINE</span>
+      </div>
+      <div class="telemetry-node">
+        <span class="label">RULESET:</span>
+        <span class="val">9,342 CHECKS</span>
+      </div>
+      <div class="telemetry-node">
+        <span class="label">DEFENSE GRID:</span>
+        <span class="val" style="color:var(--emerald);">ARMED</span>
+      </div>
+      <div class="telemetry-node">
+        <span class="label">SYS-TIME:</span>
+        <span class="val" id="hud-clock">00:00:00 UTC</span>
+      </div>
+    </div>
+
+    <!-- Right Controls -->
+    <div class="nav-right">
+      <button class="audio-toggle" id="audioBtn" title="Toggle Tactical Cyber SFX">
+        <span id="audioIcon">🔊</span>
+        <span id="audioLabel">SFX: ON</span>
+      </button>
+      <a class="nav-launch-btn" href="/app" id="launchBtn">
+        <span>Launch Console</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+          <polyline points="12 5 19 12 12 19"></polyline>
+        </svg>
+      </a>
+    </div>
+  </header>
+
+  <!-- ================= MAIN VIEWPORT CONTENT (ZERO SCROLL) ================= -->
+  <main class="cyber-main">
+
+    <!-- LEFT COLUMN: HERO, VALUE PROP, QUICK TARGET LAUNCHER & TELEMETRY STATS -->
+    <section class="hero-column">
+      <div>
+        <div class="hero-kicker-wrap">
+          <div class="cyber-badge">
+            <span class="pulse-node"></span>
+            <span>Evidence-Gated DAST</span>
+          </div>
+          <span class="engine-tag">ZERO AGENT OVERHEAD</span>
+        </div>
+
+        <h2 class="hero-title">
+          <span class="glow-word">Scan Anything.</span>
+          <span class="sub-line">Trust The Verdict.</span>
+        </h2>
+
+        <p class="hero-desc">
+          Automated web application & API vulnerability assessment platform. Runs <strong>9,300+ deterministic checks</strong> across OWASP Top 10, OpenAPI endpoints, and cloud infrastructure with zero false positives. Every finding is backed by <strong>cryptographic response proof</strong>.
+        </p>
+
+        <!-- Inline Scope Launcher -->
+        <form class="quick-target-box" id="targetForm" action="/app" method="GET">
+          <span class="target-prefix">TARGET://</span>
+          <input type="text" name="target" class="target-input" id="quickTargetInput" placeholder="Enter target URL or OpenAPI spec (e.g. https://api.target.com/v1)" autocomplete="off" spellcheck="false">
+          <button type="submit" class="target-go-btn" id="quickTargetSubmit">Scan Scope &rarr;</button>
+        </form>
+
+        <!-- Preset Target Quick Chips -->
+        <div class="preset-row">
+          <span class="preset-label">Scope Presets:</span>
+          <span class="preset-chip" data-url="https://api.example.com/v1">REST API</span>
+          <span class="preset-chip" data-url="https://target-app.com/api/v2/openapi.json">OpenAPI Spec</span>
+          <span class="preset-chip" data-url="https://staging.internal-corp.net">Internal App</span>
+          <span class="preset-chip" data-url="https://auth.cloud-service.io/login">OAuth / Auth</span>
+        </div>
+      </div>
+
+      <!-- 4 Stat Counters Grid (Clickable to switch tab) -->
+      <div class="telemetry-stat-grid">
+        <div class="stat-card" data-jump-tab="1" title="Click to view DAST & Verification Engine">
+          <div class="stat-val accent">9,342+</div>
+          <div class="stat-label">Active Signatures</div>
+        </div>
+        <div class="stat-card" data-jump-tab="1" title="Click to view Zero False Positive Verification">
+          <div class="stat-val" style="color:var(--emerald);">0 FP</div>
+          <div class="stat-label">Evidence-Gated</div>
+        </div>
+        <div class="stat-card" data-jump-tab="0" title="Click to view Security Assessment Profiles">
+          <div class="stat-val">4-in-1</div>
+          <div class="stat-label">Audit Engines</div>
+        </div>
+        <div class="stat-card" data-jump-tab="3" title="Click to view Compliance & Executive Reports">
+          <div class="stat-val" style="color:var(--violet);">&lt; 180s</div>
+          <div class="stat-label">Avg Triage Speed</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT COLUMN: INTERACTIVE CYBER DECK (ALL PRODUCT INFO IN ONE VIEW) -->
+    <section class="cyber-deck-column">
+
+      <!-- Interactive Multi-Channel HUD -->
+      <div class="hud-console">
+        <div class="hud-corner hud-tl"></div>
+        <div class="hud-corner hud-tr"></div>
+        <div class="hud-corner hud-bl"></div>
+        <div class="hud-corner hud-br"></div>
+
+        <!-- 4-Channel Tab Navigation -->
+        <div class="deck-nav-bar">
+          <button class="deck-tab-btn active" data-tab="tab-profiles">
+            <span class="tab-num">01//</span>
+            <span>Security Profiles</span>
+          </button>
+          <button class="deck-tab-btn" data-tab="tab-dast">
+            <span class="tab-num">02//</span>
+            <span>DAST & Fuzzing</span>
+          </button>
+          <button class="deck-tab-btn" data-tab="tab-api">
+            <span class="tab-num">03//</span>
+            <span>API Protocols</span>
+          </button>
+          <button class="deck-tab-btn" data-tab="tab-reports">
+            <span class="tab-num">04//</span>
+            <span>Compliance & PDF</span>
+          </button>
+        </div>
+
+        <!-- Tab Body -->
+        <div class="deck-body">
+
+          <!-- TAB 1: 4 SECURITY PROFILES -->
+          <div class="deck-panel active" id="tab-profiles">
+            <div class="panel-top">
+              <div class="panel-tagline">
+                <span>FOUR SPECIALIZED AUDIT ENGINES</span>
+                <span class="pill">AUTOMATED WORKFLOWS</span>
+              </div>
+              <div class="panel-status">
+                <span class="pulse-node" style="background:var(--emerald);"></span>
+                <span>READY TO AUDIT</span>
+              </div>
+            </div>
+
+            <div class="panel-cards-grid">
+              <!-- Profile 1 -->
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    <span>Web App Security Audit</span>
+                  </div>
+                  <span class="fcard-code">OWASP-TOP10</span>
+                </div>
+                <p class="fcard-desc">Deep offensive audit targeting SQLi, XSS, SSRF, RCE, IDOR, sensitive file leaks (.env, .git, config backups), and unauthorized admin panels.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">SQLi / XSS</span>
+                  <span class="fcard-chip">SSRF</span>
+                  <span class="fcard-chip">Broken Auth</span>
+                </div>
+              </div>
+
+              <!-- Profile 2 -->
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    <span>API Security Assessment</span>
+                  </div>
+                  <span class="fcard-code">OPENAPI / SWAGGER</span>
+                </div>
+                <p class="fcard-desc">Native parsing of OpenAPI 3.x, Swagger 2.0 & Postman collections. Dynamic path mutation, schema fuzzing with automated validation bypass.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">Postman Auto-Convert</span>
+                  <span class="fcard-chip">Auth Token Injection</span>
+                </div>
+              </div>
+
+              <!-- Profile 3 -->
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+                    <span>Full-Spectrum Enterprise</span>
+                  </div>
+                  <span class="fcard-code">MAX-COVERAGE</span>
+                </div>
+                <p class="fcard-desc">Unified multi-vector assessment combining web app penetration, microservice API fuzzing, and cloud infrastructure surface testing.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">End-to-End Audit</span>
+                  <span class="fcard-chip">Network / SSL</span>
+                </div>
+              </div>
+
+              <!-- Profile 4 -->
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <span>Surface Recon & Exposure</span>
+                  </div>
+                  <span class="fcard-code">RECON-PASSIVE</span>
+                </div>
+                <p class="fcard-desc">Rapid external perimeter reconnaissance. Identifies exposed dashboards, technologies, weak SSL/TLS suites, and open ports without noise.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">Tech Fingerprint</span>
+                  <span class="fcard-chip">SSL/TLS Audit</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: DAST & VERIFICATION ENGINE -->
+          <div class="deck-panel" id="tab-dast">
+            <div class="panel-top">
+              <div class="panel-tagline">
+                <span>EVIDENCE-GATED PRECISION ENGINE</span>
+                <span class="pill" style="border-color:var(--cyan);color:var(--cyan);">ZERO FALSE POSITIVES</span>
+              </div>
+              <div class="panel-status">
+                <span class="pulse-node" style="background:var(--cyan);"></span>
+                <span>DETERMINISTIC VERIFIER</span>
+              </div>
+            </div>
+
+            <div class="panel-cards-grid">
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span>Deterministic Matchers</span>
+                  </div>
+                  <span class="fcard-code">RESPONSE-DIFF</span>
+                </div>
+                <p class="fcard-desc">Every finding requires strict HTTP status, header, and body regex matching. No heuristic guesses — vulnerabilities include exact reproduction curls.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">Status Regex</span>
+                  <span class="fcard-chip">DOM Verification</span>
+                </div>
+              </div>
+
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
+                    <span>Active DAST Fuzzing</span>
+                  </div>
+                  <span class="fcard-code">PAYLOAD-INJECT</span>
+                </div>
+                <p class="fcard-desc">Mutates URL parameters, JSON payloads, headers, and multipart requests with specialized fuzz vectors to expose backend syntax anomalies.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">Header Fuzzing</span>
+                  <span class="fcard-chip">JSON Mutation</span>
+                </div>
+              </div>
+
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    <span>Dynamic Auth Handler</span>
+                  </div>
+                  <span class="fcard-code">SESSION-MGMT</span>
+                </div>
+                <p class="fcard-desc">Injects Bearer tokens, cookies, custom enterprise headers, and executes auto-authentication login flows without session loss.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">OAuth / JWT</span>
+                  <span class="fcard-chip">Cookie Inject</span>
+                </div>
+              </div>
+
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    <span>High-Concurrency Core</span>
+                  </div>
+                  <span class="fcard-code">GO-PGO OPTIMIZED</span>
+                </div>
+                <p class="fcard-desc">Powered by Nuclei v3 asynchronous Go engine with profile-guided optimization. Scales from 10 to 1,000+ requests per second safely.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">Rate Limiting</span>
+                  <span class="fcard-chip">Smart Clustering</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 3: API PROTOCOLS & INTEGRATIONS -->
+          <div class="deck-panel" id="tab-api">
+            <div class="panel-top">
+              <div class="panel-tagline">
+                <span>NATIVE API INGESTION SUITE</span>
+                <span class="pill" style="border-color:var(--emerald);color:var(--emerald);">OPENAPI & POSTMAN</span>
+              </div>
+              <div class="panel-status">
+                <span class="pulse-node" style="background:var(--emerald);"></span>
+                <span>ZERO CONFIG PARSER</span>
+              </div>
+            </div>
+
+            <div class="panel-cards-grid">
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                    <span>Postman Auto-Converter</span>
+                  </div>
+                  <span class="fcard-code">POSTMAN-v2.1</span>
+                </div>
+                <p class="fcard-desc">Import existing Postman collections directly. Infinity automatically converts requests, variables, and environments into OpenAPI 3.0 specs.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">One-Click Ingest</span>
+                  <span class="fcard-chip">Env Variables</span>
+                </div>
+              </div>
+
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                    <span>Parameter Resolver</span>
+                  </div>
+                  <span class="fcard-code">PATH-MUTATE</span>
+                </div>
+                <p class="fcard-desc">Resolves dynamic route parameters (e.g. <code>/users/{id}/profile</code>) with smart sample values to avoid dead-end 404 scans.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">Schema Bypass (-sfv)</span>
+                  <span class="fcard-chip">Path Params</span>
+                </div>
+              </div>
+
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <span>CI/CD Pipeline Ready</span>
+                  </div>
+                  <span class="fcard-code">DEVOPS-HOOK</span>
+                </div>
+                <p class="fcard-desc">Trigger scans headlessly via REST API or shell script. Block pipelines on Critical/High findings using configurable risk thresholds.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">GitHub Actions</span>
+                  <span class="fcard-chip">GitLab CI</span>
+                </div>
+              </div>
+
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    <span>Protocol Agnostic</span>
+                  </div>
+                  <span class="fcard-code">HTTP/WS/TCP</span>
+                </div>
+                <p class="fcard-desc">Comprehensive protocol coverage supporting HTTP/1.1, HTTP/2, WebSockets, DNS zones, and TLS handshake security validation.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">WebSocket Auditing</span>
+                  <span class="fcard-chip">DNS Zones</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 4: COMPLIANCE & CLIENT REPORTS -->
+          <div class="deck-panel" id="tab-reports">
+            <div class="panel-top">
+              <div class="panel-tagline">
+                <span>AUDIT-GRADE DELIVERABLES</span>
+                <span class="pill" style="border-color:var(--violet);color:#ddd6fe;">EXECUTIVE & TECHNICAL</span>
+              </div>
+              <div class="panel-status">
+                <span class="pulse-node" style="background:var(--violet);"></span>
+                <span>SARIF 2.1.0 READY</span>
+              </div>
+            </div>
+
+            <div class="panel-cards-grid">
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    <span>Executive PDF Report</span>
+                  </div>
+                  <span class="fcard-code">CLIENT-READY</span>
+                </div>
+                <p class="fcard-desc">Download polished, board-ready security assessment reports with CVSS v3.1 severity scores, risk matrices, and remediation roadmaps.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">Visual Risk Score</span>
+                  <span class="fcard-chip">C-Level Summary</span>
+                </div>
+              </div>
+
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    <span>SARIF 2.1 Standard</span>
+                  </div>
+                  <span class="fcard-code">OASIS-SARIF</span>
+                </div>
+                <p class="fcard-desc">Direct SARIF output to populate GitHub Advanced Security, GitLab Security Dashboard, and developer IDEs with inline code references.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">Native IDE Import</span>
+                  <span class="fcard-chip">Security Center</span>
+                </div>
+              </div>
+
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    <span>Compliance Frameworks</span>
+                  </div>
+                  <span class="fcard-code">OWASP / NIST / PCI</span>
+                </div>
+                <p class="fcard-desc">Every finding is automatically indexed against OWASP Top 10 (2021), NIST SP 800-53, CWE Top 25, and PCI-DSS 4.0 requirements.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">NIST SP 800-53</span>
+                  <span class="fcard-chip">PCI-DSS 4.0</span>
+                </div>
+              </div>
+
+              <div class="feature-hud-card">
+                <div class="fcard-header">
+                  <div class="fcard-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <span>Complete Audit Bundle</span>
+                  </div>
+                  <span class="fcard-code">MULTI-FORMAT</span>
+                </div>
+                <p class="fcard-desc">Instant export package with <code>report.pdf</code>, <code>report.sarif</code>, <code>results.json</code>, markdown summaries, and full execution logs.</p>
+                <div class="fcard-chips">
+                  <span class="fcard-chip">Raw HTTP Logs</span>
+                  <span class="fcard-chip">JSON Schema</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- LOWER TELEMETRY HUD: RADAR SWEEP & LIVE PROBE LOG -->
+      <div class="telemetry-radar-console">
+        <!-- Radar Widget -->
+        <div class="radar-box">
+          <div class="radar-screen">
+            <div class="radar-ring"></div>
+            <div class="radar-sweep"></div>
+            <div class="radar-blip b1"></div>
+            <div class="radar-blip b2"></div>
+          </div>
+          <span class="radar-label">SURFACE RADAR</span>
+        </div>
+
+        <!-- Live Probe Terminal Feed -->
+        <div class="telemetry-terminal">
+          <div class="term-header">
+            <span class="title">// LIVE THREAT & AUDIT STREAM</span>
+            <span id="targetTelemetry">TARGET: AUTO-DISCOVERY [STANDBY]</span>
+          </div>
+          <div class="term-logs" id="termLogs">
+            <!-- Dynamically animated log lines -->
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ================= BOTTOM TELEMETRY FOOTER ================= -->
+  <footer class="cyber-footer">
+    <div class="footer-left">
+      <span><strong class="strong">ENGINE:</strong> Nuclei Core v3.11.1 (Go 1.27.1)</span>
+      <span><strong class="strong">ATTACK VECTORS:</strong> OWASP Top 10 · CVE-2024 · Zero-Day Matchers</span>
+      <span><strong class="strong">INTEGRATIONS:</strong> OpenAPI 3 · Swagger · Postman Collection v2.1</span>
+    </div>
+    <div class="footer-right">
+      <span>INFINITY SECURITY PLATFORM</span>
+      <a href="/app">LAUNCH SCANNER &rarr;</a>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+  /* ================= WEB AUDIO TACTICAL SFX SYNTHESIZER ================= */
+  let audioEnabled = true;
+  let audioCtx = null;
+
+  function initAudio() {
+    if (!audioCtx) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (AudioContext) audioCtx = new AudioContext();
+    }
+  }
+
+  function playCyberBlip(freq = 880, duration = 0.05, type = 'sine') {
+    if (!audioEnabled) return;
+    try {
+      initAudio();
+      if (!audioCtx) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(freq * 0.4, audioCtx.currentTime + duration);
+      
+      gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+      
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    } catch(e) {}
+  }
+
+  const audioBtn = document.getElementById('audioBtn');
+  const audioIcon = document.getElementById('audioIcon');
+  const audioLabel = document.getElementById('audioLabel');
+
+  audioBtn.addEventListener('click', () => {
+    audioEnabled = !audioEnabled;
+    if (audioEnabled) {
+      audioIcon.textContent = '🔊';
+      audioLabel.textContent = 'SFX: ON';
+      playCyberBlip(1200, 0.08, 'triangle');
+    } else {
+      audioIcon.textContent = '🔇';
+      audioLabel.textContent = 'SFX: OFF';
+    }
+  });
+
+  /* ================= INTERACTIVE HUD TAB SYSTEM ================= */
+  const tabButtons = document.querySelectorAll('.deck-tab-btn');
+  const tabPanels = document.querySelectorAll('.deck-panel');
+  let currentTabIndex = 0;
+  let autoRotateInterval = null;
+
+  function switchTab(index, userInitiated = false) {
+    currentTabIndex = index % tabButtons.length;
+    
+    tabButtons.forEach((btn, i) => {
+      if (i === currentTabIndex) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+
+    const targetId = tabButtons[currentTabIndex].getAttribute('data-tab');
+    tabPanels.forEach(panel => {
+      if (panel.id === targetId) {
+        panel.classList.add('active');
+      } else {
+        panel.classList.remove('active');
+      }
+    });
+
+    if (userInitiated) {
+      playCyberBlip(750, 0.06, 'triangle');
+      resetAutoRotate();
+    }
+  }
+
+  tabButtons.forEach((btn, index) => {
+    btn.addEventListener('click', () => switchTab(index, true));
+    btn.addEventListener('mouseenter', () => playCyberBlip(540, 0.03, 'sine'));
+  });
+
+  // Clicking stat cards jumps directly to relevant tab
+  document.querySelectorAll('[data-jump-tab]').forEach(card => {
+    card.addEventListener('click', () => {
+      const tabIdx = parseInt(card.getAttribute('data-jump-tab'), 10);
+      switchTab(tabIdx, true);
+    });
+  });
+
+  // Preset chips populate target input
+  const quickTargetInput = document.getElementById('quickTargetInput');
+  document.querySelectorAll('.preset-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const url = chip.getAttribute('data-url');
+      if (quickTargetInput) {
+        quickTargetInput.value = url;
+        quickTargetInput.focus();
+        playCyberBlip(920, 0.04, 'sine');
+      }
+    });
+  });
+
+  function startAutoRotate() {
+    autoRotateInterval = setInterval(() => {
+      switchTab((currentTabIndex + 1) % tabButtons.length, false);
+    }, 6500);
+  }
+
+  function resetAutoRotate() {
+    clearInterval(autoRotateInterval);
+    startAutoRotate();
+  }
+  startAutoRotate();
+
+  // Pause rotation on hover of deck body
+  const hudConsole = document.querySelector('.hud-console');
+  hudConsole.addEventListener('mouseenter', () => clearInterval(autoRotateInterval));
+  hudConsole.addEventListener('mouseleave', () => startAutoRotate());
+
+  /* ================= LIVE SYS-TIME CLOCK ================= */
+  const clockEl = document.getElementById('hud-clock');
+  function updateClock() {
+    const d = new Date();
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    const ss = String(d.getUTCSeconds()).padStart(2, '0');
+    if (clockEl) clockEl.textContent = `${hh}:${mm}:${ss} UTC`;
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  /* ================= LIVE TELEMETRY LOG STREAM ================= */
+  const telemetryLogs = [
+    { tag: 'tag-cyan', text: 'CORE: Loaded 9,342 deterministic vulnerability checks' },
+    { tag: 'tag-ok', text: 'DAST: Ingested OpenAPI v3.1 spec (52 endpoints mapped)' },
+    { tag: 'tag-warn', text: 'AUTH: Dynamic Bearer token injected & session established' },
+    { tag: 'tag-cyan', text: 'FUZZ: Testing /api/v2/auth for JWT confusion & IDOR...' },
+    { tag: 'tag-ok', text: 'VERDICT: Evidence-gated response verified (0 false positives)' },
+    { tag: 'tag-cyan', text: 'AUDIT: Multi-layer SQLi / SSRF payloads dispatched' },
+    { tag: 'tag-ok', text: 'REPORT: Executive PDF & SARIF 2.1.0 bundle compiled' },
+    { tag: 'tag-warn', text: 'RECON: Cloud perimeter asset discovery scanning 443/TCP' }
+  ];
+
+  const termLogsContainer = document.getElementById('termLogs');
+  let logPointer = 0;
+
+  function renderInitialLogs() {
+    for (let i = 0; i < 3; i++) {
+      pushNextLog();
+    }
+  }
+
+  function pushNextLog() {
+    if (!termLogsContainer) return;
+    const item = telemetryLogs[logPointer % telemetryLogs.length];
+    logPointer++;
+    
+    const now = new Date();
+    const timeStr = `${String(now.getUTCHours()).padStart(2,'0')}:${String(now.getUTCMinutes()).padStart(2,'0')}:${String(now.getUTCSeconds()).padStart(2,'0')}`;
+    
+    const row = document.createElement('div');
+    row.className = 'log-row';
+    row.innerHTML = `
+      <span class="log-time">[${timeStr}]</span>
+      <span class="log-tag ${item.tag}">${item.tag === 'tag-ok' ? 'VERIFIED' : item.tag === 'tag-warn' ? 'ACTION' : 'ENGINE'}</span>
+      <span class="log-msg">${item.text}</span>
+    `;
+    
+    termLogsContainer.appendChild(row);
+    while (termLogsContainer.children.length > 3) {
+      termLogsContainer.removeChild(termLogsContainer.firstChild);
+    }
+  }
+  renderInitialLogs();
+  setInterval(pushNextLog, 2400);
+
+  /* ================= BUTTON HOVER SOUNDS ================= */
+  const allInteractive = document.querySelectorAll('.nav-launch-btn, .btn-cyber-primary, .btn-cyber-ghost, .stat-card, .feature-hud-card, .target-go-btn, .preset-chip');
+  allInteractive.forEach(el => {
+    el.addEventListener('mouseenter', () => playCyberBlip(820, 0.04, 'sine'));
+  });
+
+  /* ================= ADVANCED DUAL CYBER CANVAS (GRID + CODE RAIN) ================= */
+  const canvas = document.getElementById('cyber-canvas');
+  const ctx = canvas.getContext('2d');
+  
+  let width, height;
+  let codeDrops = [];
+  const cyberGlyphs = '0101010101ABCDEF9342DASTSSRFXSSIDORCVE200OK';
+
+  function resizeCanvas() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+    
+    const cols = Math.floor(width / 28);
+    codeDrops = [];
+    for (let i = 0; i < cols; i++) {
+      codeDrops.push({
+        x: i * 28 + Math.random() * 8,
+        y: Math.random() * -height,
+        speed: 1.2 + Math.random() * 2.2,
+        char: cyberGlyphs[Math.floor(Math.random() * cyberGlyphs.length)],
+        opacity: 0.15 + Math.random() * 0.45
+      });
+    }
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  let gridOffset = 0;
+
+  function renderCyberBackdrop() {
+    ctx.clearRect(0, 0, width, height);
+
+    // 1. Draw 3D Perspective Cyber Floor Grid
+    const horizonY = height * 0.65;
+    const vanishX = width * 0.5;
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(6, 182, 212, 0.12)';
+    ctx.lineWidth = 1;
+
+    // Perspective lines radiating from horizon
+    const lineCount = 36;
+    for (let i = -lineCount; i <= lineCount; i++) {
+      const startX = vanishX + (i * (width / lineCount) * 1.8);
+      ctx.beginPath();
+      ctx.moveTo(vanishX, horizonY);
+      ctx.lineTo(startX, height);
+      ctx.stroke();
+    }
+
+    // Moving horizontal grid lines
+    gridOffset = (gridOffset + 0.65) % 36;
+    for (let y = 0; y < 14; y++) {
+      const p = (y * 36 + gridOffset) / (14 * 36);
+      const py = horizonY + Math.pow(p, 2.2) * (height - horizonY);
+      
+      const alpha = Math.min(0.25, Math.pow(p, 1.8) * 0.35);
+      ctx.strokeStyle = `rgba(0, 240, 255, ${alpha})`;
+      ctx.beginPath();
+      ctx.moveTo(0, py);
+      ctx.lineTo(width, py);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 2. Cyber Code Rain Particles
+    ctx.font = '11px monospace';
+    for (let i = 0; i < codeDrops.length; i++) {
+      const drop = codeDrops[i];
+      
+      ctx.fillStyle = `rgba(0, 240, 255, ${drop.opacity})`;
+      ctx.fillText(drop.char, drop.x, drop.y);
+      
+      // Update
+      drop.y += drop.speed;
+      if (Math.random() > 0.94) {
+        drop.char = cyberGlyphs[Math.floor(Math.random() * cyberGlyphs.length)];
+      }
+
+      if (drop.y > height) {
+        drop.y = Math.random() * -120;
+        drop.speed = 1.2 + Math.random() * 2.2;
+      }
+    }
+
+    requestAnimationFrame(renderCyberBackdrop);
+  }
+  requestAnimationFrame(renderCyberBackdrop);
+</script>
+</body>
+</html>
